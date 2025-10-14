@@ -1,6 +1,9 @@
 package sources
 
 import (
+	"context"
+	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -8,22 +11,51 @@ import (
 	"tc.com/oracle-prices/pkg/logging"
 )
 
+const (
+	// Retry configuration defaults
+	DefaultMaxRetries     = 5
+	DefaultInitialBackoff = 1 * time.Second
+	DefaultMaxBackoff     = 2 * time.Minute
+	DefaultBackoffFactor  = 2.0
+)
+
+// RetryConfig holds retry configuration for sources
+type RetryConfig struct {
+	MaxRetries     int
+	InitialBackoff time.Duration
+	MaxBackoff     time.Duration
+	BackoffFactor  float64
+}
+
+// DefaultRetryConfig returns the default retry configuration
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:     DefaultMaxRetries,
+		InitialBackoff: DefaultInitialBackoff,
+		MaxBackoff:     DefaultMaxBackoff,
+		BackoffFactor:  DefaultBackoffFactor,
+	}
+}
+
 // BaseSource provides common functionality for all price sources
 type BaseSource struct {
-	name          string
-	sourcetype    SourceType
-	symbols       []string
-	pairs         map[string]string // unified symbol -> source-specific symbol mapping
-	prices        map[string]Price
-	pricesMu      sync.RWMutex
-	lastUpdate    time.Time
-	updateMu      sync.RWMutex
-	healthy       bool
-	healthMu      sync.RWMutex
-	subscribers   []chan<- PriceUpdate
-	subscribersMu sync.RWMutex
-	stopChan      chan struct{}
-	logger        *logging.Logger
+	name             string
+	sourcetype       SourceType
+	symbols          []string
+	pairs            map[string]string // unified symbol -> source-specific symbol mapping
+	prices           map[string]Price
+	pricesMu         sync.RWMutex
+	lastUpdate       time.Time
+	updateMu         sync.RWMutex
+	healthy          bool
+	healthMu         sync.RWMutex
+	subscribers      []chan<- PriceUpdate
+	subscribersMu    sync.RWMutex
+	stopChan         chan struct{}
+	logger           *logging.Logger
+	retryConfig      RetryConfig
+	consecutiveFails int
+	failsMu          sync.Mutex
 }
 
 // NewBaseSource creates a new base source with pair mappings
@@ -34,17 +66,19 @@ func NewBaseSource(name string, sourcetype SourceType, pairs map[string]string, 
 	for unifiedSymbol := range pairs {
 		symbols = append(symbols, unifiedSymbol)
 	}
-	
+
 	return &BaseSource{
-		name:        name,
-		sourcetype:  sourcetype,
-		symbols:     symbols,
-		pairs:       pairs,
-		prices:      make(map[string]Price),
-		subscribers: make([]chan<- PriceUpdate, 0),
-		stopChan:    make(chan struct{}),
-		logger:      logger,
-		healthy:     false,
+		name:             name,
+		sourcetype:       sourcetype,
+		symbols:          symbols,
+		pairs:            pairs,
+		prices:           make(map[string]Price),
+		subscribers:      make([]chan<- PriceUpdate, 0),
+		stopChan:         make(chan struct{}),
+		logger:           logger,
+		healthy:          false,
+		retryConfig:      DefaultRetryConfig(),
+		consecutiveFails: 0,
 	}
 }
 
@@ -223,13 +257,13 @@ func ParsePairsConfig(config map[string]interface{}) (map[string]string, error) 
 	if !ok {
 		return nil, nil // No pairs configured, return empty map
 	}
-	
+
 	pairsMap, ok := pairsRaw.(map[string]interface{})
 	if !ok {
 		// Try to interpret as a simpler format
 		return nil, nil
 	}
-	
+
 	pairs := make(map[string]string, len(pairsMap))
 	for unified, sourceRaw := range pairsMap {
 		source, ok := sourceRaw.(string)
@@ -238,6 +272,126 @@ func ParsePairsConfig(config map[string]interface{}) (map[string]string, error) 
 		}
 		pairs[unified] = source
 	}
-	
+
 	return pairs, nil
+}
+
+// SetRetryConfig sets custom retry configuration
+func (b *BaseSource) SetRetryConfig(config RetryConfig) {
+	b.retryConfig = config
+}
+
+// GetRetryConfig returns the current retry configuration
+func (b *BaseSource) GetRetryConfig() RetryConfig {
+	return b.retryConfig
+}
+
+// RecordSuccess resets the consecutive failure counter
+func (b *BaseSource) RecordSuccess() {
+	b.failsMu.Lock()
+	defer b.failsMu.Unlock()
+	b.consecutiveFails = 0
+}
+
+// RecordFailure increments the consecutive failure counter
+func (b *BaseSource) RecordFailure() {
+	b.failsMu.Lock()
+	defer b.failsMu.Unlock()
+	b.consecutiveFails++
+}
+
+// GetConsecutiveFailures returns the number of consecutive failures
+func (b *BaseSource) GetConsecutiveFailures() int {
+	b.failsMu.Lock()
+	defer b.failsMu.Unlock()
+	return b.consecutiveFails
+}
+
+// CalculateBackoff calculates the backoff duration for the current attempt
+// Uses exponential backoff with jitter
+func (b *BaseSource) CalculateBackoff(attempt int) time.Duration {
+	if attempt <= 0 {
+		return 0
+	}
+
+	// Calculate exponential backoff: initialBackoff * (factor ^ attempt)
+	backoff := float64(b.retryConfig.InitialBackoff) * math.Pow(b.retryConfig.BackoffFactor, float64(attempt-1))
+
+	// Cap at max backoff
+	if backoff > float64(b.retryConfig.MaxBackoff) {
+		backoff = float64(b.retryConfig.MaxBackoff)
+	}
+
+	duration := time.Duration(backoff)
+
+	// Add jitter (±10%) to prevent thundering herd
+	jitter := time.Duration(float64(duration) * 0.1 * (2.0*float64(time.Now().UnixNano()%100)/100.0 - 1.0))
+	duration += jitter
+
+	return duration
+}
+
+// RetryWithBackoff executes a function with exponential backoff retry logic
+// Returns the error from the last attempt if all retries fail
+func (b *BaseSource) RetryWithBackoff(ctx context.Context, operation string, fn func() error) error {
+	var lastErr error
+
+	for attempt := 1; attempt <= b.retryConfig.MaxRetries; attempt++ {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled during %s: %w", operation, ctx.Err())
+		case <-b.stopChan:
+			return fmt.Errorf("source stopped during %s", operation)
+		default:
+		}
+
+		// Execute the operation
+		err := fn()
+		if err == nil {
+			// Success
+			if attempt > 1 {
+				b.logger.Info("Operation succeeded after retry",
+					"operation", operation,
+					"attempt", attempt,
+					"source", b.name)
+			}
+			b.RecordSuccess()
+			return nil
+		}
+
+		lastErr = err
+		b.RecordFailure()
+
+		// Last attempt, don't sleep
+		if attempt == b.retryConfig.MaxRetries {
+			b.logger.Error("Operation failed after all retries",
+				"operation", operation,
+				"attempts", attempt,
+				"source", b.name,
+				"error", err)
+			break
+		}
+
+		// Calculate backoff and sleep
+		backoff := b.CalculateBackoff(attempt)
+		b.logger.Warn("Operation failed, retrying with backoff",
+			"operation", operation,
+			"attempt", attempt,
+			"max_attempts", b.retryConfig.MaxRetries,
+			"backoff", backoff,
+			"source", b.name,
+			"error", err)
+
+		select {
+		case <-time.After(backoff):
+			// Continue to next attempt
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled during backoff: %w", ctx.Err())
+		case <-b.stopChan:
+			return fmt.Errorf("source stopped during backoff")
+		}
+	}
+
+	return fmt.Errorf("operation %s failed after %d attempts: %w", operation, b.retryConfig.MaxRetries, lastErr)
 }

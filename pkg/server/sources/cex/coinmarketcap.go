@@ -138,9 +138,15 @@ func (s *CoinMarketCapSource) pollLoop(ctx context.Context) {
 		case <-s.StopChan():
 			return
 		case <-ticker.C:
-			if err := s.fetchPrices(ctx); err != nil {
-				s.Logger().Error("Failed to fetch prices", "error", err)
+			// Use retry logic for fetching prices
+			err := s.RetryWithBackoff(ctx, "fetch_prices", func() error {
+				return s.fetchPrices(ctx)
+			})
+			if err != nil {
+				s.Logger().Error("Failed to fetch prices after retries", "error", err)
 				s.SetHealthy(false)
+			} else {
+				s.SetHealthy(true)
 			}
 		}
 	}
@@ -183,6 +189,12 @@ func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
+		s.SetHealthy(false)
+		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

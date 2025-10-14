@@ -110,6 +110,9 @@ func (s *BandProtocolSource) Start(ctx context.Context) error {
 	// Initial fetch
 	if err := s.fetchPrices(ctx); err != nil {
 		s.logger.Warn("Initial price fetch failed", "error", err)
+		s.setHealthy(false)
+	} else {
+		s.setHealthy(true)
 	}
 
 	// Start periodic updates
@@ -153,10 +156,16 @@ func (s *BandProtocolSource) fetchPrices(ctx context.Context) error {
 		return fmt.Errorf("no valid symbols to fetch")
 	}
 
-	// Build request URL
-	url := fmt.Sprintf("%s?symbols=%s&min_count=10&ask_count=16",
-		bandProtocolAPIURL,
-		strings.Join(bandSymbols, ","))
+	// Build request URL with multiple symbols parameters
+	// Band Protocol format: ?symbols=BTC&symbols=ETH&symbols=EUR
+	// Note: Band Protocol validator count requirements:
+	// - ask_count: number of validators to query (max depends on active validators)
+	// - min_count: minimum required responses
+	// Using lower values (4/3) for more reliable results
+	url := bandProtocolAPIURL + "?min_count=3&ask_count=4"
+	for _, symbol := range bandSymbols {
+		url += "&symbols=" + symbol
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

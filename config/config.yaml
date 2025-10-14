@@ -52,6 +52,18 @@ feeder:
   # Environment variable containing mnemonic (recommended for production)
   mnemonic_env: ORACLE_FEEDER_MNEMONIC
   
+  # HD derivation path configuration
+  # Default: m/44'/330'/0'/0/0 (Terra Classic coin type 330)
+  # For Cosmos Hub: m/44'/118'/0'/0/0
+  # Leave empty to auto-generate from coin_type
+  hd_path: ""
+  
+  # BIP44 coin type (SLIP-0044 registered coin types)
+  # 330 = Terra Classic (LUNA) - DEFAULT
+  # 118 = Cosmos (ATOM)
+  # Leave at 0 to use default Terra Classic (330)
+  coin_type: 330
+  
   # Fee configuration
   fee_amount: "100000uluna"  # Fixed fee amount (0.1 LUNC per message)
   gas_limit: 200000          # Gas limit (0 = auto estimate)
@@ -68,17 +80,115 @@ feeder:
 
 # Price Sources Configuration
 sources:
-  # CoinGecko (REST API)
+  # CoinGecko (REST API) - Comprehensive coverage, fallback provider
   - type: cex
     name: coingecko
     enabled: true
     priority: 1
     config:
       pairs:
-        "LUNC/USD": "terra-luna"
-        "USTC/USD": "terrausd"
+        # Terra Classic ecosystem
+        "LUNC/USD": "terra-luna-classic"
+        "USTC/USD": "terrausd-classic"
+        "LUNA/USD": "terra-luna-2"
+        # Major cryptocurrencies
         "BTC/USD": "bitcoin"
         "ETH/USD": "ethereum"
+        "BNB/USD": "binancecoin"
+        "XRP/USD": "ripple"
+        "DOGE/USD": "dogecoin"
+        "ADA/USD": "cardano"
+        "SOL/USD": "solana"
+        "MATIC/USD": "matic-network"
+        "DOT/USD": "polkadot"
+        "LTC/USD": "litecoin"
+        "SHIB/USD": "shiba-inu"
+        "TRX/USD": "tron"
+        "AVAX/USD": "avalanche-2"
+        "LINK/USD": "chainlink"
+        "ATOM/USD": "cosmos"
+        "UNI/USD": "uniswap"
+        "ETC/USD": "ethereum-classic"
+        "XLM/USD": "stellar"
+        "XMR/USD": "monero"
+        "ALGO/USD": "algorand"
+        "VET/USD": "vechain"
+        "ICP/USD": "internet-computer"
+        "FIL/USD": "filecoin"
+        "APT/USD": "aptos"
+        "NEAR/USD": "near"
+        # Stablecoins
+        "USDT/USD": "tether"
+        "USDC/USD": "usd-coin"
+        "DAI/USD": "dai"
+        "STETH/USD": "staked-ether"
+        # DeFi tokens
+        "AAVE/USD": "aave"
+        "MKR/USD": "maker"
+        "SNX/USD": "havven"
+        "CRV/USD": "curve-dao-token"
+        "COMP/USD": "compound-governance-token"
+        "LDO/USD": "lido-dao"
+        "CAKE/USD": "pancakeswap-token"
+        "SAND/USD": "the-sandbox"
+        "MANA/USD": "decentraland"
+        "AXS/USD": "axie-infinity"
+        "GRT/USD": "the-graph"
+        "1INCH/USD": "1inch"
+        "DYDX/USD": "dydx"
+        "CVX/USD": "convex-finance"
+        "GMX/USD": "gmx"
+        "FXS/USD": "frax-share"
+        # Layer 1/2 tokens
+        "XTZ/USD": "tezos"
+        "EOS/USD": "eos"
+        "FLOW/USD": "flow"
+        "EGLD/USD": "elrond-erd-2"
+        "KLAY/USD": "klay-token"
+        "MINA/USD": "mina-protocol"
+        "STX/USD": "blockstack"
+        "NEO/USD": "neo"
+        "FTM/USD": "fantom"
+        # Cosmos ecosystem
+        "OSMO/USD": "osmosis"
+        "JUNO/USD": "juno-network"
+        "SCRT/USD": "secret"
+        "KAVA/USD": "kava"
+        "INJ/USD": "injective-protocol"
+        "EVMOS/USD": "evmos"
+        "AKT/USD": "akash-network"
+        "RUNE/USD": "thorchain"
+        "STARS/USD": "stargaze"
+        "CTK/USD": "certik"
+        "CRO/USD": "crypto-com-chain"
+        "ANKR/USD": "ankr"
+        # Other notable tokens
+        "ENJ/USD": "enjincoin"
+        "CHZ/USD": "chiliz"
+        "BAT/USD": "basic-attention-token"
+        "ZIL/USD": "zilliqa"
+        "LRC/USD": "loopring"
+        "IMX/USD": "immutable-x"
+        "APE/USD": "apecoin"
+        "THETA/USD": "theta-token"
+        "QNT/USD": "quant-network"
+        "AMP/USD": "amp-token"
+        "ZEC/USD": "zcash"
+        "DASH/USD": "dash"
+        "DCR/USD": "decred"
+        "ENS/USD": "ethereum-name-service"
+        "AR/USD": "arweave"
+        "KDA/USD": "kadena"
+        "TFUEL/USD": "theta-fuel"
+        "DFI/USD": "defichain"
+        "NEXO/USD": "nexo"
+        "TON/USD": "the-open-network"
+        "XDC/USD": "xdce-crowd-sale"
+        "XCN/USD": "chain-2"
+        "XEC/USD": "ecash"
+        "GT/USD": "gatechain-token"
+        "XRD/USD": "radix"
+        "HNT/USD": "helium"
       update_interval: 60s
   
   # Binance (WebSocket - Real-time with kline_5m)
@@ -88,10 +198,91 @@ sources:
     priority: 1
     config:
       pairs:
+        # Terra Classic
         "LUNC/USDT": "LUNCUSDT"
         "USTC/USDT": "USTCUSDT"
+        "LUNA/USDT": "LUNAUSDT"
+        # Major cryptocurrencies
         "BTC/USDT": "BTCUSDT"
         "ETH/USDT": "ETHUSDT"
+        "BNB/USDT": "BNBUSDT"
+        "XRP/USDT": "XRPUSDT"
+        "ADA/USDT": "ADAUSDT"
+        "DOGE/USDT": "DOGEUSDT"
+        "SOL/USDT": "SOLUSDT"
+        "MATIC/USDT": "MATICUSDT"
+        "DOT/USDT": "DOTUSDT"
+        "LTC/USDT": "LTCUSDT"
+        "SHIB/USDT": "SHIBUSDT"
+        "TRX/USDT": "TRXUSDT"
+        "AVAX/USDT": "AVAXUSDT"
+        "LINK/USDT": "LINKUSDT"
+        "ATOM/USDT": "ATOMUSDT"
+        "UNI/USDT": "UNIUSDT"
+        "ETC/USDT": "ETCUSDT"
+        "XLM/USDT": "XLMUSDT"
+        "XMR/USDT": "XMRUSDT"
+        "ALGO/USDT": "ALGOUSDT"
+        "VET/USDT": "VETUSDT"
+        "ICP/USDT": "ICPUSDT"
+        "FIL/USDT": "FILUSDT"
+        "APT/USDT": "APTUSDT"
+        "NEAR/USDT": "NEARUSDT"
+        "EOS/USDT": "EOSUSDT"
+        "NEO/USDT": "NEOUSDT"
+        # Stablecoins
+        "USDC/USDT": "USDCUSDT"
+        "DAI/USDT": "DAIUSDT"
+        # DeFi tokens
+        "AAVE/USDT": "AAVEUSDT"
+        "MKR/USDT": "MKRUSDT"
+        "SNX/USDT": "SNXUSDT"
+        "CRV/USDT": "CRVUSDT"
+        "COMP/USDT": "COMPUSDT"
+        "LDO/USDT": "LDOUSDT"
+        "CAKE/USDT": "CAKEUSDT"
+        "SAND/USDT": "SANDUSDT"
+        "MANA/USDT": "MANAUSDT"
+        "AXS/USDT": "AXSUSDT"
+        "GRT/USDT": "GRTUSDT"
+        "1INCH/USDT": "1INCHUSDT"
+        "DYDX/USDT": "DYDXUSDT"
+        "CVX/USDT": "CVXUSDT"
+        "GMX/USDT": "GMXUSDT"
+        "IMX/USDT": "IMXUSDT"
+        "APE/USDT": "APEUSDT"
+        # Layer 1/2
+        "XTZ/USDT": "XTZUSDT"
+        "FLOW/USDT": "FLOWUSDT"
+        "EGLD/USDT": "EGLDUSDT"
+        "KLAY/USDT": "KLAYUSDT"
+        "MINA/USDT": "MINAUSDT"
+        "STX/USDT": "STXUSDT"
+        "FTM/USDT": "FTMUSDT"
+        # Cosmos ecosystem
+        "OSMO/USDT": "OSMOUSDT"
+        "KAVA/USDT": "KAVAUSDT"
+        "INJ/USDT": "INJUSDT"
+        "RUNE/USDT": "RUNEUSDT"
+        "SCRT/USDT": "SCRTUSDT"
+        "CTK/USDT": "CTKUSDT"
+        "ANKR/USDT": "ANKRUSDT"
+        # Other tokens
+        "ENJ/USDT": "ENJUSDT"
+        "CHZ/USDT": "CHZUSDT"
+        "BAT/USDT": "BATUSDT"
+        "ZIL/USDT": "ZILUSDT"
+        "LRC/USDT": "LRCUSDT"
+        "THETA/USDT": "THETAUSDT"
+        "QNT/USDT": "QNTUSDT"
+        "AMP/USDT": "AMPUSDT"
+        "ZEC/USDT": "ZECUSDT"
+        "DASH/USDT": "DASHUSDT"
+        "DCR/USDT": "DCRUSDT"
+        "ENS/USDT": "ENSUSDT"
+        "AR/USDT": "ARUSDT"
+        "TFUEL/USDT": "TFUELUSDT"
+        "NEXO/USDT": "NEXOUSDT"
       websocket_url: "wss://stream.binance.com:9443"
   
   # Bitfinex (REST API)
@@ -101,10 +292,303 @@ sources:
     priority: 1
     config:
       pairs:
-        "LUNC/USD": "tLUNCUSD"
-        "USTC/USD": "tUSTCUSD"
         "BTC/USD": "tBTCUSD"
         "ETH/USD": "tETHUSD"
+        "LTC/USD": "tLTCUSD"
+        "ETC/USD": "tETCUSD"
+        "ZEC/USD": "tZECUSD"
+        "XMR/USD": "tXMRUSD"
+        "XRP/USD": "tXRPUSD"
+        "EOS/USD": "tEOSUSD"
+        "NEO/USD": "tNEOUSD"
+        "BAT/USD": "tBATUSD"
+        "TRX/USD": "tTRXUSD"
+        "LRC/USD": "tLRCUSD"
+        "DAI/USD": "tDAIUSD"
+        "XLM/USD": "tXLMUSD"
+        "MKR/USD": "tMKRUSD"
+        "ZIL/USD": "tZILUSD"
+        "VET/USD": "tVETUSD"
+        "XTZ/USD": "tXTZUSD"
+        "ENJ/USD": "tENJUSD"
+        "AMP/USD": "tAMPUSD"
+        "CHZ/USD": "tCHZUSD"
+        "DOT/USD": "tDOTUSD"
+        "ADA/USD": "tADAUSD"
+        "UNI/USD": "tUNIUSD"
+        "SNX/USD": "tSNXUSD"
+        "FIL/USD": "tFILUSD"
+        "XDC/USD": "tXDCUSD"
+        "FTM/USD": "tFTMUSD"
+        "ICP/USD": "tICPUSD"
+        "GRT/USD": "tGRTUSD"
+        "XRD/USD": "tXRDUSD"
+        "AXS/USD": "tAXSUSD"
+        "CRV/USD": "tCRVUSD"
+        "XCN/USD": "tXCNUSD"
+        "APT/USD": "tAPTUSD"
+  
+  # Kucoin (REST API)
+  - type: cex
+    name: kucoin
+    enabled: false  # Not implemented yet
+    priority: 1
+    config:
+      pairs:
+        # Terra Classic
+        "LUNC/USDT": "LUNC-USDT"
+        "USTC/USDT": "USTC-USDT"
+        "LUNA/USDT": "LUNA-USDT"
+        # Major cryptocurrencies
+        "BTC/USDT": "BTC-USDT"
+        "ETH/USDT": "ETH-USDT"
+        "BNB/USDT": "BNB-USDT"
+        "XRP/USDT": "XRP-USDT"
+        "ADA/USDT": "ADA-USDT"
+        "SOL/USDT": "SOL-USDT"
+        "SOL/USDC": "SOL-USDC"
+        "DOT/USDT": "DOT-USDT"
+        "LTC/USDT": "LTC-USDT"
+        "SHIB/USDT": "SHIB-USDT"
+        "TRX/USDT": "TRX-USDT"
+        "AVAX/USDT": "AVAX-USDT"
+        "LINK/USDT": "LINK-USDT"
+        "ATOM/USDT": "ATOM-USDT"
+        "UNI/USDT": "UNI-USDT"
+        "ETC/USDT": "ETC-USDT"
+        "XLM/USDT": "XLM-USDT"
+        "XMR/USDT": "XMR-USDT"
+        "VET/USDT": "VET-USDT"
+        "ICP/USDT": "ICP-USDT"
+        "FIL/USDT": "FIL-USDT"
+        "APT/USDT": "APT-USDT"
+        "NEAR/USDT": "NEAR-USDT"
+        "EOS/USDT": "EOS-USDT"
+        # Stablecoins
+        "USDC/USDT": "USDC-USDT"
+        # DeFi tokens
+        "AAVE/USDT": "AAVE-USDT"
+        "MKR/USDT": "MKR-USDT"
+        "SNX/USDT": "SNX-USDT"
+        "CRV/USDT": "CRV-USDT"
+        "COMP/USDT": "COMP-USDT"
+        "CAKE/USDT": "CAKE-USDT"
+        "SAND/USDT": "SAND-USDT"
+        "MANA/USDT": "MANA-USDT"
+        "AXS/USDT": "AXS-USDT"
+        "GRT/USDT": "GRT-USDT"
+        "1INCH/USDT": "1INCH-USDT"
+        "DYDX/USDT": "DYDX-USDT"
+        "IMX/USDT": "IMX-USDT"
+        "APE/USDT": "APE-USDT"
+        "FXS/USDT": "FXS-USDT"
+        # Layer 1/2
+        "XTZ/USDT": "XTZ-USDT"
+        "EGLD/USDT": "EGLD-USDT"
+        "STX/USDT": "STX-USDT"
+        "FTM/USDT": "FTM-USDT"
+        "NEO/USDT": "NEO-USDT"
+        # Cosmos ecosystem
+        "KAVA/USDT": "KAVA-USDT"
+        "INJ/USDT": "INJ-USDT"
+        "RUNE/USDT": "RUNE-USDT"
+        "SCRT/USDT": "SCRT-USDT"
+        "CRO/USDT": "CRO-USDT"
+        # Other tokens
+        "CHZ/USDT": "CHZ-USDT"
+        "ZIL/USDT": "ZIL-USDT"
+        "LRC/USDT": "LRC-USDT"
+        "QNT/USDT": "QNT-USDT"
+        "ZEC/USDT": "ZEC-USDT"
+        "DASH/USDT": "DASH-USDT"
+        "AR/USDT": "AR-USDT"
+        "KDA/USDT": "KDA-USDT"
+        "XDC/USDT": "XDC-USDT"
+        "DFI/USDT": "DFI-USDT"
+        "TON/USDT": "TON-USDT"
+  
+  # Huobi (REST API)
+  - type: cex
+    name: huobi
+    enabled: false  # Not implemented yet
+    priority: 1
+    config:
+      pairs:
+        # Terra Classic
+        "LUNC/USDT": "luncusdt"
+        "USTC/USDT": "ustcusdt"
+        "LUNA/USDT": "lunausdt"
+        # Major cryptocurrencies
+        "BTC/USDT": "btcusdt"
+        "ETH/USDT": "ethusdt"
+        "BNB/USDT": "bnbusdt"
+        "XRP/USDT": "xrpusdt"
+        "ADA/USDT": "adausdt"
+        "DOGE/USDT": "dogeusdt"
+        "SOL/USDT": "solusdt"
+        "MATIC/USDT": "maticusdt"
+        "DOT/USDT": "dotusdt"
+        "LTC/USDT": "ltcusdt"
+        "SHIB/USDT": "shibusdt"
+        "TRX/USDT": "trxusdt"
+        "AVAX/USDT": "avaxusdt"
+        "LINK/USDT": "linkusdt"
+        "ATOM/USDT": "atomusdt"
+        "UNI/USDT": "uniusdt"
+        "ETC/USDT": "etcusdt"
+        "XLM/USDT": "xlmusdt"
+        "ALGO/USDT": "algousdt"
+        "VET/USDT": "vetusdt"
+        "ICP/USDT": "icpusdt"
+        "FIL/USDT": "filusdt"
+        "APT/USDT": "aptusdt"
+        "NEAR/USDT": "nearusdt"
+        "EOS/USDT": "eosusdt"
+        "NEO/USDT": "neousdt"
+        # Stablecoins
+        "USDC/USDT": "usdcusdt"
+        "DAI/USDT": "daiusdt"
+        "STETH/USDT": "stethusdt"
+        # DeFi tokens
+        "AAVE/USDT": "aaveusdt"
+        "MKR/USDT": "mkrusdt"
+        "SNX/USDT": "snxusdt"
+        "CRV/USDT": "crvusdt"
+        "COMP/USDT": "compusdt"
+        "LDO/USDT": "ldousdt"
+        "CAKE/USDT": "cakeusdt"
+        "SAND/USDT": "sandusdt"
+        "MANA/USDT": "manausdt"
+        "AXS/USDT": "axsusdt"
+        "GRT/USDT": "grtusdt"
+        "1INCH/USDT": "1inchusdt"
+        "DYDX/USDT": "dydxusdt"
+        "CVX/USDT": "cvxusdt"
+        "GMX/USDT": "gmxusdt"
+        "IMX/USDT": "imxusdt"
+        "APE/USDT": "apeusdt"
+        # Layer 1/2
+        "XTZ/USDT": "xtzusdt"
+        "FLOW/USDT": "flowusdt"
+        "EGLD/USDT": "egldusdt"
+        "KLAY/USDT": "klayusdt"
+        "MINA/USDT": "minausdt"
+        "STX/USDT": "stxusdt"
+        "FTM/USDT": "ftmusdt"
+        # Cosmos ecosystem
+        "KAVA/USDT": "kavausdt"
+        "INJ/USDT": "injusdt"
+        "SCRT/USDT": "scrtusdt"
+        "AKT/USDT": "aktusdt"
+        "EVMOS/USDT": "evmosusdt"
+        "ANKR/USDT": "ankrusdt"
+        # Other tokens
+        "ENJ/USDT": "enjusdt"
+        "CHZ/USDT": "chzusdt"
+        "BAT/USDT": "batusdt"
+        "ZIL/USDT": "zilusdt"
+        "LRC/USDT": "lrcusdt"
+        "THETA/USDT": "thetausdt"
+        "AMP/USDT": "ampusdt"
+        "ZEC/USDT": "zecusdt"
+        "DASH/USDT": "dashusdt"
+        "ENS/USDT": "ensusdt"
+        "AR/USDT": "arusdt"
+        "TFUEL/USDT": "tfuelusdt"
+        "XDC/USDT": "xdcusdt"
+        "DFI/USDT": "dfiusdt"
+        "NEXO/USDT": "nexousdt"
+        "GT/USDT": "gtusdt"
+        "XCN/USDT": "xcnusdt"
+        "XEC/USDT": "xecusdt"
+        "TON/USDT": "tonusdt"
+  
+  # Kraken (REST API)
+  - type: cex
+    name: kraken
+    enabled: false  # Disabled by default, enable if needed
+    priority: 2
+    config:
+      pairs:
+        # USDT pairs
+        "ADA/USDT": "ADAUSDT"
+        "ALGO/USDT": "ALGOUSDT"
+        "APE/USDT": "APEUSDT"
+        "ATOM/USDT": "ATOMUSDT"
+        "AVAX/USDT": "AVAXUSDT"
+        "DAI/USDT": "DAIUSDT"
+        "DOT/USDT": "DOTUSDT"
+        "EOS/USDT": "EOSUSDT"
+        "ETH/USDC": "ETHUSDC"
+        "ETH/USDT": "ETHUSDT"
+        "LINK/USDT": "LINKUSDT"
+        "LTC/USDT": "LTCUSDT"
+        "MANA/USDT": "MANAUSDT"
+        "MATIC/USDT": "MATICUSDT"
+        "SHIB/USDT": "SHIBUSDT"
+        "SOL/USDT": "SOLUSDT"
+        "USDC/USDT": "USDCUSDT"
+        "XMR/USDT": "XMRUSDT"
+        "XRP/USDT": "XRPUSDT"
+        "XTZ/USDT": "XTZUSDT"
+        # USD pairs
+        "1INCH/USD": "1INCHUSD"
+        "AAVE/USD": "AAVEUSD"
+        "ADA/USD": "ADAUSD"
+        "AKT/USD": "AKTUSD"
+        "ALGO/USD": "ALGOUSD"
+        "AMP/USD": "AMPUSD"
+        "ANKR/USD": "ANKRUSD"
+        "APE/USD": "APEUSD"
+        "APT/USD": "APTUSD"
+        "ATOM/USD": "ATOMUSD"
+        "AVAX/USD": "AVAXUSD"
+        "AXS/USD": "AXSUSD"
+        "BAT/USD": "BATUSD"
+        "CHZ/USD": "CHZUSD"
+        "COMP/USD": "COMPUSD"
+        "CRV/USD": "CRVUSD"
+        "CVX/USD": "CVXUSD"
+        "DAI/USD": "DAIUSD"
+        "DASH/USD": "DASHUSD"
+        "DOT/USD": "DOTUSD"
+        "DYDX/USD": "DYDXUSD"
+        "EGLD/USD": "EGLDUSD"
+        "ENJ/USD": "ENJUSD"
+        "ENS/USD": "ENSUSD"
+        "EOS/USD": "EOSUSD"
+        "FIL/USD": "FILUSD"
+        "FLOW/USD": "FLOWUSD"
+        "FTM/USD": "FTMUSD"
+        "FXS/USD": "FXSUSD"
+        "GRT/USD": "GRTUSD"
+        "GTC/USD": "GTCUSD"
+        "ICP/USD": "ICPUSD"
+        "IMX/USD": "IMXUSD"
+        "INJ/USD": "INJUSD"
+        "JUNO/USD": "JUNOUSD"
+        "KAVA/USD": "KAVAUSD"
+        "LDO/USD": "LDOUSD"
+        "LINK/USD": "LINKUSD"
+        "LRC/USD": "LRCUSD"
+        "MANA/USD": "MANAUSD"
+        "MATIC/USD": "MATICUSD"
+        "MINA/USD": "MINAUSD"
+        "MKR/USD": "MKRUSD"
+        "NEAR/USD": "NEARUSD"
+        "QNT/USD": "QNTUSD"
+        "RUNE/USD": "RUNEUSD"
+        "SAND/USD": "SANDUSD"
+        "SCRT/USD": "SCRTUSD"
+        "SHIB/USD": "SHIBUSD"
+        "SNX/USD": "SNXUSD"
+        "SOL/USD": "SOLUSD"
+        "STX/USD": "STXUSD"
+        "TRX/USD": "TRXUSD"
+        "UNI/USD": "UNIUSD"
+        "USDC/USD": "USDCUSD"
+        "XCN/USD": "XCNUSD"
+        "XTZ/USD": "XTZUSD"
   
   # Bybit (REST API)
   - type: cex
@@ -159,10 +643,10 @@ sources:
     priority: 1
     config:
       pairs:
-        - symbol: "LUNC/USTC"
-          contract_address: "terra1...replaceme"
+        - symbol: "LUNC/USDC"
+          contract_address: "terra1a29fltd5h5y8se0xanw48wkmqg7nfpmv5jsl472uun0274h8xatqd3yzfh"
           asset0_denom: "uluna"
-          asset1_denom: "uusd"
+          asset1_denom: "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5"
           decimals0: 6
           decimals1: 6
       update_interval: 30s
@@ -174,10 +658,10 @@ sources:
     priority: 1
     config:
       pairs:
-        - symbol: "LUNC/USTC"
-          contract_address: "terra1...replaceme"
+        - symbol: "LUNC/USDC"
+          contract_address: "terra19h62lw77rluxf6yg4szcclcgk9tsalx72cv7dlzvzs8gy20g70js7c9jkc"
           asset0_denom: "uluna"
-          asset1_denom: "uusd"
+          asset1_denom: "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5"
           decimals0: 6
           decimals1: 6
       update_interval: 30s
@@ -189,43 +673,123 @@ sources:
     priority: 1
     config:
       pairs:
-        - symbol: "LUNC/USTC"
-          contract_address: "terra1...replaceme"
+        - symbol: "LUNC/USDC"
+          contract_address: "terra1vnt3tjg0v98hgp0vx8nynvklnjqzkzsqvtpzv9v56r800gdhmxwstv5y64"
           asset0_denom: "uluna"
-          asset1_denom: "uusd"
+          asset1_denom: "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5"
           decimals0: 6
           decimals1: 6
       update_interval: 30s
   
-  # Example: Fiat rates from Frankfurter (free, no API key)
-  - type: fiat
-    name: frankfurter
-    enabled: true
-    priority: 1
-    config:
-      symbols: ["EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD", "CNY/USD", "CAD/USD", "AUD/USD"]
-      timeout: 5000      # milliseconds
-      interval: 30000    # milliseconds (30 seconds)
-  
-  # FER.ee fiat rates (free, no API key)
-  - type: fiat
-    name: fer
-    enabled: true
-    priority: 1
-    config:
-      symbols: ["EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD", "CNY/USD", "MNT/USD"]
-      timeout: 5000
-      interval: 30000
-  
-  # IMF SDR rates (free, no API key)
+  # IMF SDR rates (free, no API key) - Priority 1
   - type: fiat
     name: imf
     enabled: true
     priority: 1
     config:
       symbols: ["SDR/USD"]
-      timeout: 10000
-      interval: 300000   # 5 minutes
+      timeout: 10000      # 10 seconds
+      interval: 300000    # 5 minutes
+  
+  # Frankfurter fiat rates (free, no API key) - Priority 1
+  - type: fiat
+    name: frankfurter
+    enabled: true
+    priority: 1
+    config:
+      symbols: [
+        "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD", "CNY/USD",
+        "CAD/USD", "CHF/USD", "HKD/USD", "AUD/USD", "SGD/USD",
+        "THB/USD", "SEK/USD", "DKK/USD", "IDR/USD", "PHP/USD",
+        "MYR/USD", "NOK/USD", "TWD/USD", "MNT/USD", "INR/USD"
+      ]
+      timeout: 5000       # 5 seconds
+      interval: 30000     # 30 seconds
+  
+  # ExchangeRate.host (requires API key) - Priority 2
+  - type: fiat
+    name: exchangerate_api
+    enabled: false  # Requires API key
+    priority: 2
+    config:
+      symbols: [
+        "SDR/USD", "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD",
+        "CNY/USD", "MNT/USD", "CAD/USD", "CHF/USD", "HKD/USD",
+        "AUD/USD", "SGD/USD", "THB/USD", "SEK/USD", "DKK/USD",
+        "IDR/USD", "PHP/USD", "MYR/USD", "NOK/USD", "TWD/USD",
+        "INR/USD"
+      ]
+      api_key_env: EXCHANGERATE_API_KEY
+      timeout: 5000
+      interval: 30000
+  
+  # Fixer.io (requires API key) - Priority 2
+  - type: fiat
+    name: fixer
+    enabled: false  # Requires API key - Professional Plus plan recommended
+    priority: 2
+    config:
+      symbols: [
+        "SDR/USD", "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD",
+        "CNY/USD", "MNT/USD", "CAD/USD", "CHF/USD", "HKD/USD",
+        "AUD/USD", "SGD/USD", "THB/USD", "SEK/USD", "DKK/USD",
+        "IDR/USD", "PHP/USD", "MYR/USD", "NOK/USD", "TWD/USD",
+        "INR/USD"
+      ]
+      api_key_env: FIXER_API_KEY
+      timeout: 5000
+      interval: 60000  # 60 seconds
+  
+  # CurrencyLayer (requires API key) - Priority 2
+  - type: fiat
+    name: currencylayer
+    enabled: false  # Requires API key - Enterprise plan recommended
+    priority: 2
+    config:
+      symbols: [
+        "SDR/USD", "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD",
+        "CNY/USD", "MNT/USD", "CAD/USD", "CHF/USD", "HKD/USD",
+        "AUD/USD", "SGD/USD", "THB/USD", "SEK/USD", "DKK/USD",
+        "IDR/USD", "PHP/USD", "MYR/USD", "NOK/USD", "TWD/USD",
+        "INR/USD"
+      ]
+      api_key_env: CURRENCYLAYER_API_KEY
+      timeout: 5000
+      interval: 60000
+  
+  # FastForex (requires API key) - Priority 2
+  - type: fiat
+    name: fastforex
+    enabled: false  # Requires API key
+    priority: 2
+    config:
+      symbols: [
+        "SDR/USD", "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD",
+        "CNY/USD", "MNT/USD", "CAD/USD", "CHF/USD", "HKD/USD",
+        "AUD/USD", "SGD/USD", "THB/USD", "SEK/USD", "DKK/USD",
+        "IDR/USD", "PHP/USD", "MYR/USD", "NOK/USD", "TWD/USD",
+        "INR/USD"
+      ]
+      api_key_env: FASTFOREX_API_KEY
+      timeout: 5000
+      interval: 60000
+  
+  # AlphaVantage (requires API key) - Priority 2
+  - type: fiat
+    name: alphavantage
+    enabled: false  # Requires API key - 150 req/min plan recommended
+    priority: 2
+    config:
+      symbols: [
+        "SDR/USD", "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD",
+        "CNY/USD", "MNT/USD", "CAD/USD", "CHF/USD", "HKD/USD",
+        "AUD/USD", "SGD/USD", "THB/USD", "SEK/USD", "DKK/USD",
+        "IDR/USD", "PHP/USD", "MYR/USD", "NOK/USD", "TWD/USD",
+        "INR/USD"
+      ]
+      api_key_env: ALPHAVANTAGE_API_KEY
+      timeout: 5000
+      interval: 60000
   
   # Band Protocol oracle (free, no API key)
   - type: oracle
@@ -237,16 +801,22 @@ sources:
       timeout: 10000
       interval: 60000    # 1 minute
   
-  # Example: ExchangeRate.host (requires API key)
-  - type: fiat
-    name: exchangerate_api
-    enabled: false  # Requires API key
-    priority: 2
+  # PancakeSwap on BSC (EVM DEX)
+  - type: evm
+    name: pancakeswap_bsc
+    enabled: true
+    priority: 1
     config:
-      symbols: ["EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD"]
-      api_key_env: EXCHANGERATE_API_KEY
-      timeout: 5000
-      interval: 30000
+      chain_id: 56  # BSC mainnet
+      rpc_url: "https://bsc-dataseed1.binance.org"
+      pairs:
+        - symbol: "LUNC/USDT"
+          pair_address: "0x34c422989df98e8369f28eb9799eac1be2df70d0"
+          token0_address: "0x156ab3346823B651294766e23e6Cf87254d68962"  # LUNC on BSC
+          token1_address: "0x55d398326f99059fF775485246999027B3197955"  # USDT on BSC
+          decimals0: 6
+          decimals1: 18
+      update_interval: 30s
 
 # Prometheus Metrics
 metrics:
@@ -271,3 +841,11 @@ logging:
     max_size: 100      # MB
     max_backups: 3     # Number of old log files to retain
     max_age: 28        # Days
+
+# SDR Basket Composition (for calculating SDR value if not available from fiat providers)
+# These weights are used to calculate the SDR/USD rate from component currencies
+# Reference: IMF SDR basket composition (as of TypeScript feeder config)
+# SDR = 0.57813 USD + 0.37379 EUR + 13.452 JPY + 1.0993 CNY + 0.080870 GBP
+#
+# Note: The SDR source will automatically calculate SDR/USD if needed using these weights.
+# Normally the IMF fiat source provides direct SDR/USD rates, so this is a fallback.

@@ -10,7 +10,7 @@ import (
 
 func TestFrankfurterSource_Initialize(t *testing.T) {
 	cfg := map[string]interface{}{
-		"symbols":  []interface{}{"EUR", "GBP", "JPY", "KRW"},
+		"symbols":  []interface{}{"EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD"},
 		"timeout":  10,
 		"interval": 30,
 	}
@@ -45,9 +45,9 @@ func TestFrankfurterSource_FetchPrices(t *testing.T) {
 	}
 
 	cfg := map[string]interface{}{
-		"symbols":  []interface{}{"EUR", "GBP"},
-		"timeout":  10,
-		"interval": 30,
+		"symbols":  []interface{}{"EUR/USD", "GBP/USD"},
+		"timeout":  15000, // 15 seconds to ensure network has enough time
+		"interval": 30000, // 30 seconds
 	}
 
 	source, err := NewFrankfurterSource(cfg)
@@ -61,18 +61,25 @@ func TestFrankfurterSource_FetchPrices(t *testing.T) {
 	}
 
 	// Start source
-	go source.Start(context.Background())
+	ctx := context.Background()
+	go source.Start(ctx)
 	defer source.Stop()
 
-	// Wait for first update
-	time.Sleep(3 * time.Second)
+	// Give it plenty of time for the initial fetch and any retries
+	time.Sleep(5 * time.Second)
 
-	prices, err := source.GetPrices(context.Background())
+	prices, err := source.GetPrices(ctx)
 	if err != nil {
 		t.Fatalf("GetPrices failed: %v", err)
 	}
 
 	if len(prices) == 0 {
+		// Try to manually fetch to see what the actual error is
+		testSource := source.(*FrankfurterSource)
+		fetchErr := testSource.fetchPrices(ctx)
+		if fetchErr != nil {
+			t.Fatalf("Manual fetch failed with error: %v", fetchErr)
+		}
 		t.Error("Expected prices, got empty map")
 	}
 
@@ -101,9 +108,9 @@ func TestFrankfurterSource_Subscribe(t *testing.T) {
 	}
 
 	cfg := map[string]interface{}{
-		"symbols":  []interface{}{"EUR"},
-		"timeout":  10,
-		"interval": 30,
+		"symbols":  []interface{}{"EUR/USD"},
+		"timeout":  10000, // 10 seconds
+		"interval": 30000, // 30 seconds
 	}
 
 	source, err := NewFrankfurterSource(cfg)

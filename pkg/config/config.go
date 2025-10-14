@@ -78,6 +78,16 @@ func applyDefaults(cfg *Config) {
 	if cfg.Feeder.VotePeriod == 0 {
 		cfg.Feeder.VotePeriod = 30 // Default from chain params
 	}
+	// HD path defaults for Terra Classic
+	if cfg.Feeder.HDPath == "" {
+		// Use CoinType if specified, otherwise default to Terra Classic (330)
+		coinType := cfg.Feeder.CoinType
+		if coinType == 0 {
+			coinType = 330 // Terra Classic default
+			cfg.Feeder.CoinType = 330
+		}
+		cfg.Feeder.HDPath = fmt.Sprintf("m/44'/%d'/0'/0/0", coinType)
+	}
 }
 
 // GetSourceConfig retrieves source-specific configuration value

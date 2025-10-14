@@ -48,6 +48,8 @@ type FeederConfig struct {
 	Validators    []string          `yaml:"validators"`     // Validator addresses to vote for
 	Mnemonic      string            `yaml:"mnemonic"`       // BIP39 mnemonic (or use MnemonicEnv)
 	MnemonicEnv   string            `yaml:"mnemonic_env"`   // Environment variable for mnemonic
+	HDPath        string            `yaml:"hd_path"`        // HD derivation path (default: "m/44'/330'/0'/0/0" for Terra Classic)
+	CoinType      uint32            `yaml:"coin_type"`      // BIP44 coin type (default: 330 for Terra Classic, 118 for Cosmos)
 	FeeAmount     string            `yaml:"fee_amount"`     // Fee amount (e.g., "100000uluna")
 	GasLimit      uint64            `yaml:"gas_limit"`      // Gas limit (0 = auto estimate)
 	GasPrice      string            `yaml:"gas_price"`      // Gas price for fee calculation

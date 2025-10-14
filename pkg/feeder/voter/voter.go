@@ -3,6 +3,7 @@ package voter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -29,14 +30,14 @@ const (
 
 // Voter manages the oracle voting loop
 type Voter struct {
-	chainID      string
-	validators   []sdk.ValAddress // Validator addresses to vote for
-	feeder       sdk.AccAddress   // Feeder account address
-	priceClient  price.Client
-	grpcClient   *client.Client
-	broadcaster  *tx.Broadcaster
-	eventStream  eventstream.EventStream
-	logger       zerolog.Logger
+	chainID     string
+	validators  []sdk.ValAddress // Validator addresses to vote for
+	feeder      sdk.AccAddress   // Feeder account address
+	priceClient price.Client
+	grpcClient  *client.Client
+	broadcaster *tx.Broadcaster
+	eventStream eventstream.EventStream
+	logger      zerolog.Logger
 
 	// Voting state
 	lastVotePeriod uint64
@@ -97,20 +98,20 @@ func NewVoter(
 	}
 
 	return &Voter{
-		chainID:      cfg.ChainID,
-		validators:   validators,
-		feeder:       feeder,
-		priceClient:  priceClient,
-		grpcClient:   grpcClient,
-		broadcaster:  broadcaster,
-		eventStream:  eventStream,
-		logger:       logger,
-		prevotes:     make(map[string]*oracle.Prevote),
-		state:        StateIdle,
-		maxRetries:   cfg.MaxRetries,
+		chainID:       cfg.ChainID,
+		validators:    validators,
+		feeder:        feeder,
+		priceClient:   priceClient,
+		grpcClient:    grpcClient,
+		broadcaster:   broadcaster,
+		eventStream:   eventStream,
+		logger:        logger,
+		prevotes:      make(map[string]*oracle.Prevote),
+		state:         StateIdle,
+		maxRetries:    cfg.MaxRetries,
 		retryInterval: cfg.RetryInterval,
-		gasPrice:     cfg.GasPrice,
-		feeDenom:     cfg.FeeDenom,
+		gasPrice:      cfg.GasPrice,
+		feeDenom:      cfg.FeeDenom,
 	}, nil
 }
 
@@ -148,7 +149,7 @@ func (v *Voter) Start(ctx context.Context) error {
 				Uint64("vote_period", params.VotePeriod).
 				Int("whitelist_count", len(params.Whitelist)).
 				Msg("Oracle params updated")
-			
+
 			v.votePeriodBlocks = params.VotePeriod
 			v.whitelist = params.Whitelist
 		}
@@ -341,11 +342,44 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 }
 
 // symbolToDenom converts a price symbol to oracle denom format
-// This is a simple implementation - may need enhancement based on actual symbol formats
+// Terra Classic oracle denoms:
+// - ukrw (Korean Won)
+// - usdr (Special Drawing Rights)
+// - uusd (US Dollar)
+// - umnt (Mongolian Tugrik)
+// - UST (Meta-denom for USTC/USD, no 'u' prefix)
+//
+// Symbol format examples:
+// - "KRW/USD" or "KRW" -> "ukrw"
+// - "SDR/USD" or "SDR" -> "usdr"
+// - "USD" -> "uusd" (special case, represents the price of 1 USD in LUNC)
+// - "MNT/USD" or "MNT" -> "umnt"
+// - "USTC/USD" or "USTC" -> "UST" (meta-denom, no prefix)
 func symbolToDenom(symbol string) string {
-	// Remove "/USD", "/USDT" etc suffixes
-	// TODO: implement proper symbol to denom mapping
-	return symbol
+	// Convert to uppercase for processing
+	upper := strings.ToUpper(symbol)
+
+	// Remove "/USD" or "/USDT" suffix if present (case-insensitive)
+	upper = strings.TrimSuffix(upper, "/USD")
+	upper = strings.TrimSuffix(upper, "/USDT")
+
+	// Handle special cases
+	switch upper {
+	case "SDR", "XDR":
+		return "usdr" // SDR (Special Drawing Rights)
+	case "USTC", "UST":
+		return "UST" // USTC meta-denom (no 'u' prefix)
+	case "USD":
+		return "uusd" // US Dollar
+	case "KRW":
+		return "ukrw" // Korean Won
+	case "MNT":
+		return "umnt" // Mongolian Tugrik
+	}
+
+	// For other symbols, convert to lowercase and add 'u' prefix
+	// This handles potential future additions to the oracle whitelist
+	return "u" + strings.ToLower(upper)
 }
 
 // GetState returns the current voting state

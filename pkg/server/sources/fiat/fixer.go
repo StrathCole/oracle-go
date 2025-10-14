@@ -109,9 +109,9 @@ func (s *FixerSource) Initialize(ctx context.Context) error {
 func (s *FixerSource) Start(ctx context.Context) error {
 	s.logger.Info("Starting Fixer source")
 
-	// Initial fetch
-	if err := s.fetchPrices(ctx); err != nil {
-		s.logger.Warn("Initial price fetch failed", "error", err)
+	// Initial fetch with retry
+	if err := s.retryFetch(ctx); err != nil {
+		s.logger.Warn("Initial price fetch failed after retries", "error", err)
 	}
 
 	// Start periodic updates
@@ -126,17 +126,65 @@ func (s *FixerSource) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := s.fetchPrices(ctx); err != nil {
-					s.logger.Error("Failed to fetch prices", "error", err)
-					s.setHealthy(false)
-				} else {
-					s.setHealthy(true)
-				}
+				s.retryFetch(ctx)
 			}
 		}
 	}()
 
 	return nil
+}
+
+func (s *FixerSource) retryFetch(ctx context.Context) error {
+	maxRetries := 5
+	initialBackoff := time.Second
+	maxBackoff := 2 * time.Minute
+
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		select {
+		case <-s.stopChan:
+			return fmt.Errorf("source stopped during retry")
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		err := s.fetchPrices(ctx)
+		if err == nil {
+			s.setHealthy(true)
+			return nil
+		}
+
+		lastErr = err
+		s.logger.Warn("Fetch attempt failed",
+			"attempt", attempt,
+			"max_retries", maxRetries,
+			"error", err,
+		)
+
+		if attempt == maxRetries {
+			break
+		}
+
+		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+
+		s.logger.Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
+
+		select {
+		case <-time.After(backoff):
+		case <-s.stopChan:
+			return fmt.Errorf("source stopped during backoff")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	s.setHealthy(false)
+	s.logger.Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
+	return lastErr
 }
 
 func (s *FixerSource) fetchPrices(ctx context.Context) error {
@@ -170,6 +218,12 @@ func (s *FixerSource) fetchPrices(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		s.logger.Warn("Rate limit exceeded", "source", s.name)
+		s.setHealthy(false)
+		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

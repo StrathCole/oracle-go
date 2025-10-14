@@ -95,9 +95,9 @@ func (s *IMFSource) Initialize(ctx context.Context) error {
 func (s *IMFSource) Start(ctx context.Context) error {
 	s.logger.Info("Starting IMF source")
 
-	// Initial fetch
-	if err := s.fetchSDRPrice(ctx); err != nil {
-		s.logger.Warn("Initial SDR price fetch failed", "error", err)
+	// Initial fetch with retry
+	if err := s.retryFetch(ctx); err != nil {
+		s.logger.Warn("Initial SDR price fetch failed after retries", "error", err)
 	}
 
 	// Start periodic updates
@@ -112,17 +112,65 @@ func (s *IMFSource) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := s.fetchSDRPrice(ctx); err != nil {
-					s.logger.Error("Failed to fetch SDR price", "error", err)
-					s.setHealthy(false)
-				} else {
-					s.setHealthy(true)
-				}
+				s.retryFetch(ctx)
 			}
 		}
 	}()
 
 	return nil
+}
+
+func (s *IMFSource) retryFetch(ctx context.Context) error {
+	maxRetries := 5
+	initialBackoff := time.Second
+	maxBackoff := 2 * time.Minute
+
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		select {
+		case <-s.stopChan:
+			return fmt.Errorf("source stopped during retry")
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		err := s.fetchSDRPrice(ctx)
+		if err == nil {
+			s.setHealthy(true)
+			return nil
+		}
+
+		lastErr = err
+		s.logger.Warn("Fetch attempt failed",
+			"attempt", attempt,
+			"max_retries", maxRetries,
+			"error", err,
+		)
+
+		if attempt == maxRetries {
+			break
+		}
+
+		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+
+		s.logger.Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
+
+		select {
+		case <-time.After(backoff):
+		case <-s.stopChan:
+			return fmt.Errorf("source stopped during backoff")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	s.setHealthy(false)
+	s.logger.Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
+	return lastErr
 }
 
 func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
@@ -133,9 +181,15 @@ func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch IMF page: %w", err)
+		return fmt.Errorf("failed to fetch SDR page: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		s.logger.Warn("Rate limit exceeded", "source", s.name)
+		s.setHealthy(false)
+		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -171,8 +225,6 @@ func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
 	prices := map[string]sources.Price{"SDR/USD": price}
 	s.notifySubscribers(prices, nil)
 
-	s.logger.Info("Updated SDR/USD price from IMF", "price", rate)
-
 	return nil
 }
 
@@ -194,18 +246,29 @@ func (s *IMFSource) parseSDRRate(html string) (float64, error) {
 					// Next cell should contain the rate
 					if i+1 < len(cells) {
 						rateText := strings.TrimSpace(stripHTML(cells[i+1][1]))
-						// Rate format might be "1.32149 2" - take the second number
+						// Try parsing as single number first (most common format)
+						rate, err := strconv.ParseFloat(rateText, 64)
+						if err == nil && rate > 0 {
+							s.logger.Info("Calculated SDR rate", "rate", fmt.Sprintf("%.7f", rate))
+							return rate, nil
+						}
+						// Rate format might be "1.32149 2" - try to take the first or second number
 						parts := strings.Fields(rateText)
-						if len(parts) >= 2 {
-							rate, err := strconv.ParseFloat(parts[1], 64)
+						if len(parts) >= 1 {
+							// Try first number
+							rate, err := strconv.ParseFloat(parts[0], 64)
 							if err == nil && rate > 0 {
+								s.logger.Info("Calculated SDR rate", "rate", fmt.Sprintf("%.7f", rate))
 								return rate, nil
 							}
 						}
-						// Try parsing as single number
-						rate, err := strconv.ParseFloat(rateText, 64)
-						if err == nil && rate > 0 {
-							return rate, nil
+						if len(parts) >= 2 {
+							// Try second number
+							rate, err := strconv.ParseFloat(parts[1], 64)
+							if err == nil && rate > 0 {
+								s.logger.Info("Calculated SDR rate", "rate", fmt.Sprintf("%.7f", rate))
+								return rate, nil
+							}
 						}
 					}
 				}
@@ -217,8 +280,11 @@ func (s *IMFSource) parseSDRRate(html string) (float64, error) {
 }
 
 func stripHTML(s string) string {
-	// Remove HTML tags
-	re := regexp.MustCompile(`<[^>]*>`)
+	// Remove superscript and subscript tags with their content (footnote markers)
+	re := regexp.MustCompile(`<(sup|sub)[^>]*>.*?</(sup|sub)>`)
+	s = re.ReplaceAllString(s, "")
+	// Remove remaining HTML tags
+	re = regexp.MustCompile(`<[^>]*>`)
 	return re.ReplaceAllString(s, "")
 }
 

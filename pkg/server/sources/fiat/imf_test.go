@@ -44,8 +44,8 @@ func TestIMFSource_FetchPrices(t *testing.T) {
 	}
 
 	cfg := map[string]interface{}{
-		"timeout":  15,
-		"interval": 300,
+		"timeout":  15000,  // 15 seconds
+		"interval": 300000, // 5 minutes
 	}
 
 	source, err := NewIMFSource(cfg)
@@ -102,16 +102,25 @@ func TestIMFSource_ParseSDRRate(t *testing.T) {
 		hasError bool
 	}{
 		{
-			name: "valid SDR rate",
+			name: "valid SDR rate - single number (current IMF format)",
 			html: `<table><tr>
 				<td>SDR1 = US$</td>
-				<td>1.234567</td>
+				<td>1.359580</td>
+				</tr></table>`,
+			expected: 1.359580,
+			hasError: false,
+		},
+		{
+			name: "valid SDR rate - with trailing space",
+			html: `<table><tr>
+				<td>SDR1 = US$</td>
+				<td>1.234567 </td>
 				</tr></table>`,
 			expected: 1.234567,
 			hasError: false,
 		},
 		{
-			name: "valid with space",
+			name: "valid with space in label",
 			html: `<table><tr>
 				<td>SDR 1 = US$</td>
 				<td>1.500000</td>
@@ -120,12 +129,23 @@ func TestIMFSource_ParseSDRRate(t *testing.T) {
 			hasError: false,
 		},
 		{
-			name: "valid with two numbers (IMF format)",
+			name: "valid with two numbers (older IMF format)",
 			html: `<table><tr>
 				<td>SDR1 = US$</td>
 				<td>1.32149 2</td>
 				</tr></table>`,
-			expected: 2.0,
+			expected: 1.32149,
+			hasError: false,
+		},
+		{
+			name: "valid with superscript tag",
+			html: `<table><tr>
+				<td>SDR1 = US$</td>
+				<td align="right" width="20%" nowrap="nowrap">
+				1.359580
+				<sup>4</sup></td>
+				</tr></table>`,
+			expected: 1.359580,
 			hasError: false,
 		},
 		{

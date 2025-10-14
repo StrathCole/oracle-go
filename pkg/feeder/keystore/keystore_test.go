@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
 	"github.com/stretchr/testify/assert"
@@ -15,8 +14,8 @@ import (
 const testMnemonic = "notice oak worry limit wrap speak medal online prefer cluster roof addict wrist behave treat actual wasp year salad speed social layer crew genius"
 
 func TestGetAuth_ValidMnemonic(t *testing.T) {
-	// Get auth info from test mnemonic
-	kr, valAddr, accAddr := GetAuth(testMnemonic)
+	// Get auth info from test mnemonic (using default Terra Classic path)
+	kr, valAddr, accAddr := GetAuth(testMnemonic, "")
 	require.NotNil(t, kr, "Keyring should not be nil")
 	require.NotEmpty(t, valAddr, "Validator address should not be empty")
 	require.NotEmpty(t, accAddr, "Account address should not be empty")
@@ -28,8 +27,8 @@ func TestGetAuth_ValidMnemonic(t *testing.T) {
 
 func TestGetAuth_DeterministicKeys(t *testing.T) {
 	// Same mnemonic should always produce same keys
-	kr1, valAddr1, accAddr1 := GetAuth(testMnemonic)
-	kr2, valAddr2, accAddr2 := GetAuth(testMnemonic)
+	kr1, valAddr1, accAddr1 := GetAuth(testMnemonic, "")
+	kr2, valAddr2, accAddr2 := GetAuth(testMnemonic, "")
 
 	// Addresses should match
 	assert.Equal(t, valAddr1.String(), valAddr2.String(),
@@ -54,8 +53,8 @@ func TestGetAuth_DifferentMnemonics(t *testing.T) {
 	mnemonic2, err := generateTestMnemonic()
 	require.NoError(t, err)
 
-	_, valAddr1, accAddr1 := GetAuth(mnemonic1)
-	_, valAddr2, accAddr2 := GetAuth(mnemonic2)
+	_, valAddr1, accAddr1 := GetAuth(mnemonic1, "")
+	_, valAddr2, accAddr2 := GetAuth(mnemonic2, "")
 
 	// Addresses should NOT match
 	assert.NotEqual(t, valAddr1.String(), valAddr2.String(),
@@ -65,32 +64,31 @@ func TestGetAuth_DifferentMnemonics(t *testing.T) {
 }
 
 func TestGetAuth_HDPath(t *testing.T) {
-	// Verify the HD path is m/44'/118'/0'/0/0 (standard Cosmos SDK)
-	// Manually derive key using same path
-	hdPath := hd.CreateHDPath(118, 0, 0)
-	seed, err := bip39.NewSeedWithErrorChecking(testMnemonic, "")
-	require.NoError(t, err)
+	// Verify we can use different HD paths
+	// Test with Terra Classic path (330)
+	terraPath := "m/44'/330'/0'/0/0"
+	_, valAddrTerra, accAddrTerra := GetAuth(testMnemonic, terraPath)
 
-	master, ch := hd.ComputeMastersFromSeed(seed)
-	derivedPrivKey, err := hd.DerivePrivateKeyForPath(master, ch, hdPath.String())
-	require.NoError(t, err)
+	// Test with Cosmos Hub path (118)
+	cosmosPath := "m/44'/118'/0'/0/0"
+	_, valAddrCosmos, accAddrCosmos := GetAuth(testMnemonic, cosmosPath)
 
-	expectedPrivKey := &secp256k1.PrivKey{Key: derivedPrivKey}
-	expectedValAddr := sdk.ValAddress(expectedPrivKey.PubKey().Address())
-	expectedAccAddr := sdk.AccAddress(expectedPrivKey.PubKey().Address())
+	// Different paths should produce different addresses
+	assert.NotEqual(t, valAddrTerra.String(), valAddrCosmos.String(),
+		"Different HD paths should produce different validator addresses")
+	assert.NotEqual(t, accAddrTerra.String(), accAddrCosmos.String(),
+		"Different HD paths should produce different account addresses")
 
-	// Get addresses from GetAuth
-	_, valAddr, accAddr := GetAuth(testMnemonic)
-
-	// Compare addresses
-	assert.Equal(t, expectedValAddr.String(), valAddr.String(),
-		"GetAuth should use standard Cosmos HD path (m/44'/118'/0'/0/0)")
-	assert.Equal(t, expectedAccAddr.String(), accAddr.String(),
-		"GetAuth should use standard Cosmos HD path (m/44'/118'/0'/0/0)")
+	// Default (empty string) should use Terra Classic path (330)
+	_, valAddrDefault, accAddrDefault := GetAuth(testMnemonic, "")
+	assert.Equal(t, valAddrTerra.String(), valAddrDefault.String(),
+		"Default path should use Terra Classic (m/44'/330'/0'/0/0)")
+	assert.Equal(t, accAddrTerra.String(), accAddrDefault.String(),
+		"Default path should use Terra Classic (m/44'/330'/0'/0/0)")
 }
 
 func TestPrivKeyKeyring_Key(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic)
+	kr, _, accAddr := GetAuth(testMnemonic, "")
 
 	// Get key record by name
 	record, err := kr.Key("test")
@@ -104,7 +102,7 @@ func TestPrivKeyKeyring_Key(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_KeyByAddress(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic)
+	kr, _, accAddr := GetAuth(testMnemonic, "")
 
 	// Get key record by address
 	record, err := kr.KeyByAddress(accAddr)
@@ -118,7 +116,7 @@ func TestPrivKeyKeyring_KeyByAddress(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_Sign(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic)
+	kr, _, accAddr := GetAuth(testMnemonic, "")
 
 	// Sign test message
 	testMsg := []byte("test message to sign")
@@ -137,7 +135,7 @@ func TestPrivKeyKeyring_Sign(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_SignByAddress(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic)
+	kr, _, accAddr := GetAuth(testMnemonic, "")
 
 	// Sign test message by address
 	testMsg := []byte("test message to sign")
@@ -157,7 +155,7 @@ func TestPrivKeyKeyring_SignByAddress(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_PanicsOnUnimplementedMethods(t *testing.T) {
-	kr, _, _ := GetAuth(testMnemonic)
+	kr, _, _ := GetAuth(testMnemonic, "")
 
 	// Backend() should panic
 	assert.Panics(t, func() {
@@ -212,7 +210,7 @@ func generateTestMnemonic() (string, error) {
 func TestAddressPrefix(t *testing.T) {
 	// Note: Address prefix depends on SDK config (terra/cosmos)
 	// We just verify it's a valid bech32 address
-	_, _, accAddr := GetAuth(testMnemonic)
+	_, _, accAddr := GetAuth(testMnemonic, "")
 
 	addrStr := accAddr.String()
 	require.NotEmpty(t, addrStr, "Address should not be empty")
@@ -222,12 +220,12 @@ func TestAddressPrefix(t *testing.T) {
 func BenchmarkGetAuth(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		GetAuth(testMnemonic)
+		GetAuth(testMnemonic, "")
 	}
 }
 
 func BenchmarkSign(b *testing.B) {
-	kr, _, _ := GetAuth(testMnemonic)
+	kr, _, _ := GetAuth(testMnemonic, "")
 	testMsg := []byte("test message to sign")
 
 	b.ResetTimer()

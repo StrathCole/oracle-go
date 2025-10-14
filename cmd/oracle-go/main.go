@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	"tc.com/oracle-prices/pkg/config"
 	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/metrics"
@@ -36,6 +38,16 @@ func main() {
 		fmt.Printf("oracle-go version %s\n", version)
 		os.Exit(0)
 	}
+
+	// Configure Cosmos SDK with Terra Classic prefixes
+	// This must be done before any other SDK operations
+	sdkConfig := sdk.GetConfig()
+	sdkConfig.SetBech32PrefixForAccount("terra", "terrapub")
+	sdkConfig.SetBech32PrefixForValidator("terravaloper", "terravaloperpub")
+	sdkConfig.SetBech32PrefixForConsensusNode("terravalcons", "terravalconspub")
+	sdkConfig.SetCoinType(330) // Terra Classic coin type
+	sdkConfig.SetPurpose(44)   // BIP44 purpose
+	sdkConfig.Seal()           // Make config immutable
 
 	// Load configuration
 	cfg, err := config.Load(*configFile)
