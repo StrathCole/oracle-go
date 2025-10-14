@@ -25,15 +25,18 @@ type TerraportSource struct {
 	pairs          []TerraportPair
 }
 
-// TerraportPair represents a Terraport liquidity pair
-type TerraportPair struct {
-	Symbol          string // e.g., "LUNC/USTC"
-	ContractAddress string // Pair contract address
+// TerraportPairConfig represents configuration for a Terraport liquidity pair
+type TerraportPairConfig struct {
+	Symbol          string // e.g., "LUNC/USDC"
+	ContractAddress string // Terraport pair contract address
 	Asset0Denom     string // First asset denom (e.g., "uluna")
-	Asset1Denom     string // Second asset denom (e.g., "uusd")
+	Asset1Denom     string // Second asset denom (e.g., "ibc/...")
 	Decimals0       int    // Decimals for asset 0
 	Decimals1       int    // Decimals for asset 1
 }
+
+// TerraportPair is an alias for TerraportPairConfig
+type TerraportPair = TerraportPairConfig
 
 // PoolResponse represents the response from querying a Terraport pair
 type PoolResponse struct {

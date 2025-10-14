@@ -25,29 +25,34 @@ type GarudaSource struct {
 	pairs          []GarudaPair
 }
 
-// GarudaPair represents a Garuda DeFi liquidity pair
-type GarudaPair struct {
-	Symbol          string // e.g., "LUNC/USTC"
-	ContractAddress string // Pair contract address
+// GarudaPairConfig represents configuration for a Garuda DeFi liquidity pair
+type GarudaPairConfig struct {
+	Symbol          string // e.g., "LUNC/USDC"
+	ContractAddress string // Garuda pair contract address
 	Asset0Denom     string // First asset denom (e.g., "uluna")
-	Asset1Denom     string // Second asset denom (e.g., "uusd")
+	Asset1Denom     string // Second asset denom (e.g., "ibc/...")
 	Decimals0       int    // Decimals for asset 0
 	Decimals1       int    // Decimals for asset 1
 }
 
+// GarudaPair is an alias for GarudaPairConfig
+type GarudaPair = GarudaPairConfig
+
 // GarudaPoolResponse represents the response from querying a Garuda pair
+// Garuda uses a different format than Terraport/Terraswap
 type GarudaPoolResponse struct {
-	Assets []struct {
-		Info struct {
-			NativeToken *struct {
-				Denom string `json:"denom"`
-			} `json:"native_token,omitempty"`
-			Token *struct {
-				ContractAddr string `json:"contract_addr"`
-			} `json:"token,omitempty"`
-		} `json:"info"`
-		Amount string `json:"amount"`
-	} `json:"assets"`
+	Asset1 struct {
+		Native string `json:"native,omitempty"`
+		Token  string `json:"token,omitempty"`
+	} `json:"asset1"`
+	Asset2 struct {
+		Native string `json:"native,omitempty"`
+		Token  string `json:"token,omitempty"`
+	} `json:"asset2"`
+	Reserve1       string `json:"reserve1"`
+	Reserve2       string `json:"reserve2"`
+	TotalSupply    string `json:"total_supply"`
+	LiquidityToken string `json:"liquidity_token"`
 }
 
 // NewGarudaSource creates a new Garuda DeFi source using gRPC client
@@ -176,7 +181,7 @@ func (s *GarudaSource) fetchPrices(ctx context.Context) error {
 			s.Logger().Error("Failed to fetch pair price",
 				"pair", pair.Symbol,
 				"contract", pair.ContractAddress,
-				"error", err)
+				"error", fmt.Sprintf("%v", err))  // Force string formatting of error
 			continue
 		}
 
@@ -209,46 +214,62 @@ func (s *GarudaSource) fetchPairPrice(ctx context.Context, pair GarudaPair) (dec
 		return decimal.Zero, fmt.Errorf("failed to marshal query: %w", err)
 	}
 
+	s.Logger().Debug("Querying Garuda contract",
+		"contract", pair.ContractAddress,
+		"query", string(queryBytes))
+
 	// Query contract via gRPC
 	respData, err := s.grpcClient.QuerySmartContract(ctx, pair.ContractAddress, queryBytes)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to query contract: %w", err)
+		return decimal.Zero, fmt.Errorf("gRPC query failed for contract %s: %w", pair.ContractAddress, err)
 	}
+
+	s.Logger().Debug("Got response from Garuda contract",
+		"response", string(respData))
 
 	// Parse response
 	var poolResp GarudaPoolResponse
 	if err := json.Unmarshal(respData, &poolResp); err != nil {
-		return decimal.Zero, fmt.Errorf("failed to decode response: %w", err)
+		return decimal.Zero, fmt.Errorf("failed to decode response (got: %s): %w", string(respData), err)
 	}
 
-	// Calculate price from reserves
-	if len(poolResp.Assets) != 2 {
-		return decimal.Zero, fmt.Errorf("invalid pool response: expected 2 assets, got %d", len(poolResp.Assets))
+	// Log the response to see what we actually got
+	s.Logger().Debug("Garuda pool response",
+		"contract", pair.ContractAddress,
+		"reserve1", poolResp.Reserve1,
+		"reserve2", poolResp.Reserve2)
+
+	// Parse reserves
+	if poolResp.Reserve1 == "" || poolResp.Reserve2 == "" {
+		return decimal.Zero, fmt.Errorf("invalid pool response: missing reserves (response: %s)", string(respData))
 	}
 
-	amount0, err := decimal.NewFromString(poolResp.Assets[0].Amount)
+	amount1, err := decimal.NewFromString(poolResp.Reserve1)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to parse amount0: %w", err)
+		return decimal.Zero, fmt.Errorf("failed to parse reserve1: %w", err)
 	}
 
-	amount1, err := decimal.NewFromString(poolResp.Assets[1].Amount)
+	amount2, err := decimal.NewFromString(poolResp.Reserve2)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to parse amount1: %w", err)
+		return decimal.Zero, fmt.Errorf("failed to parse reserve2: %w", err)
 	}
 
 	// Adjust for decimals
 	decimals0 := decimal.NewFromInt(int64(pair.Decimals0))
 	decimals1 := decimal.NewFromInt(int64(pair.Decimals1))
 
-	amount0 = amount0.Div(decimal.NewFromInt(10).Pow(decimals0))
-	amount1 = amount1.Div(decimal.NewFromInt(10).Pow(decimals1))
+	// Note: Garuda uses reserve1/reserve2, need to determine which is which based on asset denoms
+	// For LUNC/USDC pair: asset2 is uluna (LUNC), asset1 is USDC
+	// So reserve2 is LUNC amount, reserve1 is USDC amount
+	reserve2 := amount2.Div(decimal.NewFromInt(10).Pow(decimals0))  // LUNC
+	reserve1 := amount1.Div(decimal.NewFromInt(10).Pow(decimals1))  // USDC
 
-	// Price = amount1 / amount0 (quote asset per base asset)
-	if amount0.IsZero() {
+	// Price = USDC / LUNC (quote asset per base asset)
+	if reserve2.IsZero() {
 		return decimal.Zero, fmt.Errorf("zero liquidity in pool")
 	}
 
-	price := amount1.Div(amount0)
+	price := reserve1.Div(reserve2)
 	return price, nil
 }
 

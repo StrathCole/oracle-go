@@ -29,10 +29,10 @@ func TestTerraportSource_NewSource(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
-				"symbol":           "LUNC/USTC",
+				"symbol":           "LUNC/USDC",
 				"contract_address": "terra1xyz123",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "uusd",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
 				"decimals0":        float64(6),
 				"decimals1":        float64(6),
 			},
@@ -57,8 +57,8 @@ func TestTerraportSource_NewSource(t *testing.T) {
 		t.Errorf("Expected 1 symbol, got %d", len(symbols))
 	}
 
-	if symbols[0] != "LUNC/USTC" {
-		t.Errorf("Expected LUNC/USTC, got %s", symbols[0])
+	if symbols[0] != "LUNC/USDC" {
+		t.Errorf("Expected LUNC/USDC, got %s", symbols[0])
 	}
 }
 
@@ -66,10 +66,10 @@ func TestTerraportSource_MultiplePairs(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
-				"symbol":           "LUNC/USTC",
+				"symbol":           "LUNC/USDC",
 				"contract_address": "terra1xyz123",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "uusd",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
 			},
 			map[string]interface{}{
 				"symbol":           "LUNC/axlUSDC",
@@ -141,10 +141,10 @@ func TestTerraportSource_Initialize(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
-				"symbol":           "LUNC/USTC",
+				"symbol":           "LUNC/USDC",
 				"contract_address": "terra1xyz123",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "uusd",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
 			},
 		},
 	}
@@ -164,10 +164,10 @@ func TestTerraswapSource_NewSource(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
-				"symbol":           "LUNC/USTC",
+				"symbol":           "LUNC/USDC",
 				"contract_address": "terra1xyz123",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "uusd",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
 				"decimals0":        float64(6),
 				"decimals1":        float64(6),
 			},
@@ -219,10 +219,10 @@ func TestGarudaSource_NewSource(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
-				"symbol":           "LUNC/USTC",
+				"symbol":           "LUNC/USDC",
 				"contract_address": "terra1garuda123",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "uusd",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
 				"decimals0":        float64(6),
 				"decimals1":        float64(6),
 			},
@@ -254,10 +254,10 @@ func TestGarudaSource_Initialize(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
-				"symbol":           "LUNC/USTC",
+				"symbol":           "LUNC/USDC",
 				"contract_address": "terra1garuda123",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "uusd",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
 			},
 		},
 	}

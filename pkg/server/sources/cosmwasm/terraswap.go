@@ -25,15 +25,18 @@ type TerraswapSource struct {
 	pairs          []TerraswapPair
 }
 
-// TerraswapPair represents a Terraswap liquidity pair
-type TerraswapPair struct {
-	Symbol          string // e.g., "LUNC/USTC"
-	ContractAddress string // Pair contract address
+// TerraswapPairConfig represents configuration for a Terraswap liquidity pair
+type TerraswapPairConfig struct {
+	Symbol          string // e.g., "LUNC/USDC"
+	ContractAddress string // Terraswap pair contract address
 	Asset0Denom     string // First asset denom (e.g., "uluna")
-	Asset1Denom     string // Second asset denom (e.g., "uusd")
+	Asset1Denom     string // Second asset denom (e.g., "ibc/...")
 	Decimals0       int    // Decimals for asset 0
 	Decimals1       int    // Decimals for asset 1
 }
+
+// TerraswapPair is an alias for TerraswapPairConfig
+type TerraswapPair = TerraswapPairConfig
 
 // PoolResponse represents the response from querying a Terraswap pair
 type TerraswapPoolResponse struct {

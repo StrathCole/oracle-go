@@ -5,15 +5,28 @@ import (
 	"testing"
 	"time"
 
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/rs/zerolog"
 	"github.com/shopspring/decimal"
 	"tc.com/oracle-prices/pkg/feeder/client"
+	"tc.com/oracle-prices/pkg/server/sources"
 )
 
-// TestRealTerraportDEX tests Terraport DEX integration on Terra Classic mainnet
+// TestRealTerraportDEX tests the Terraport source against the real Terra Classic mainnet
 func TestRealTerraportDEX(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	// Configure SDK (required before any address operations)
+	sdkConfig := sdk.GetConfig()
+	sdkConfig.SetBech32PrefixForAccount("terra", "terrapub")
+	sdkConfig.SetBech32PrefixForValidator("terravaloper", "terravaloperpub")
+	sdkConfig.SetBech32PrefixForConsensusNode("terravalcons", "terravalconspub")
+	sdkConfig.SetCoinType(330)
+	sdkConfig.SetPurpose(44)
+	// Note: Can't seal in test (may already be sealed)
 
 	// Terra Classic mainnet gRPC endpoints
 	grpcEndpoints := []string{
@@ -21,32 +34,34 @@ func TestRealTerraportDEX(t *testing.T) {
 		"terra-classic-grpc.publicnode.com:443",
 	}
 
-	// Create gRPC client
-	grpcClient, err := client.NewClient(grpcEndpoints, true)
+	// Create gRPC client with correct ClientConfig
+	logger := zerolog.Nop() // Silent logger for tests
+	grpcClient, err := client.NewClient(client.ClientConfig{
+		Endpoints:         grpcEndpoints,
+		ChainID:           "columbus-5",
+		EnableTLS:         true,
+		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
+		Logger:            logger,
+	})
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client: %v", err)
 	}
-	defer grpcClient.Close()
+	// Client connections are established in NewClient, no Connect() method
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Connect to gRPC
-	if err := grpcClient.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to gRPC: %v", err)
-	}
-
 	// Terraport LUNC/USDC pair configuration
 	config := map[string]interface{}{
-		"contract_address": "terra1a29fltd5h5y8se0xanw48wkmqg7nfpmv5jsl472uun0274h8xatqd3yzfh",
-		"pair_info": map[string]interface{}{
-			"symbol":     "LUNC/USDC",
-			"token0":     "uluna",
-			"token1":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4", // axlUSDC
-			"decimals0":  6,
-			"decimals1":  6,
-			"is_native0": true,
-			"is_native1": false,
+		"pairs": []interface{}{
+			map[string]interface{}{
+				"symbol":           "LUNC/USDC",
+				"contract_address": "terra1a29fltd5h5y8se0xanw48wkmqg7nfpmv5jsl472uun0274h8xatqd3yzfh",
+				"asset0_denom":     "uluna",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+				"decimals0":        6,
+				"decimals1":        6,
+			},
 		},
 	}
 
@@ -64,14 +79,14 @@ func TestRealTerraportDEX(t *testing.T) {
 	}
 	defer source.Stop()
 
-	// Wait for initial price fetch
+	// Wait a bit for initial fetch
 	time.Sleep(5 * time.Second)
 
 	prices, err := source.GetPrices(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get prices: %v", err)
 	}
-
+	// Validate prices
 	if len(prices) == 0 {
 		t.Error("No prices returned from Terraport")
 	}
@@ -79,25 +94,21 @@ func TestRealTerraportDEX(t *testing.T) {
 	for symbol, price := range prices {
 		t.Logf("Terraport %s: %s", symbol, price.Price.String())
 
-		// Price must be positive
 		if price.Price.LessThanOrEqual(decimal.Zero) {
-			t.Errorf("Invalid price for %s: %s (must be > 0)", symbol, price.Price.String())
+			t.Errorf("Invalid price for %s: %s", symbol, price.Price.String())
 		}
 
-		// Timestamp must be recent
 		if time.Since(price.Timestamp) > 2*time.Minute {
 			t.Errorf("Stale price for %s: %s", symbol, price.Timestamp)
 		}
 
-		// Source must match
 		if price.Source != "terraport" {
-			t.Errorf("Wrong source for %s: got %s, want terraport", symbol, price.Source)
+			t.Errorf("Wrong source: got %s, want terraport", price.Source)
 		}
 
-		// LUNC/USDC should be in reasonable range
 		if symbol == "LUNC/USDC" {
-			min := decimal.NewFromFloat(0.000001)
-			max := decimal.NewFromFloat(0.01)
+			min := decimal.NewFromFloat(0.00001)
+			max := decimal.NewFromFloat(0.001)
 			if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
 				t.Logf("WARNING: LUNC/USDC price possibly out of range: %s", price.Price.String())
 			}
@@ -115,35 +126,45 @@ func TestRealTerraswapDEX(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	// Configure SDK
+	sdkConfig := sdk.GetConfig()
+	sdkConfig.SetBech32PrefixForAccount("terra", "terrapub")
+	sdkConfig.SetBech32PrefixForValidator("terravaloper", "terravaloperpub")
+	sdkConfig.SetBech32PrefixForConsensusNode("terravalcons", "terravalconspub")
+	sdkConfig.SetCoinType(330)
+	sdkConfig.SetPurpose(44)
+
 	grpcEndpoints := []string{
 		"grpc.terra-classic.hexxagon.io:443",
 		"terra-classic-grpc.publicnode.com:443",
 	}
 
-	grpcClient, err := client.NewClient(grpcEndpoints, true)
+	logger := zerolog.Nop()
+	grpcClient, err := client.NewClient(client.ClientConfig{
+		Endpoints:         grpcEndpoints,
+		ChainID:           "columbus-5",
+		EnableTLS:         true,
+		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
+		Logger:            logger,
+	})
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client: %v", err)
 	}
-	defer grpcClient.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := grpcClient.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to gRPC: %v", err)
-	}
-
 	// Terraswap LUNC/USDC pair configuration
 	config := map[string]interface{}{
-		"contract_address": "terra19h62lw77rluxf6yg4szcclcgk9tsalx72cv7dlzvzs8gy20g70js7c9jkc",
-		"pair_info": map[string]interface{}{
-			"symbol":     "LUNC/USDC",
-			"token0":     "uluna",
-			"token1":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
-			"decimals0":  6,
-			"decimals1":  6,
-			"is_native0": true,
-			"is_native1": false,
+		"pairs": []interface{}{
+			map[string]interface{}{
+				"symbol":           "LUNC/USDC",
+				"contract_address": "terra19h62lw77rluxf6yg4szcclcgk9tsalx72cv7dlzvzs8gy20g70js7c9jkc",
+				"asset0_denom":     "uluna",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+				"decimals0":        6,
+				"decimals1":        6,
+			},
 		},
 	}
 
@@ -207,35 +228,45 @@ func TestRealGarudaDEX(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	// Configure SDK
+	sdkConfig := sdk.GetConfig()
+	sdkConfig.SetBech32PrefixForAccount("terra", "terrapub")
+	sdkConfig.SetBech32PrefixForValidator("terravaloper", "terravaloperpub")
+	sdkConfig.SetBech32PrefixForConsensusNode("terravalcons", "terravalconspub")
+	sdkConfig.SetCoinType(330)
+	sdkConfig.SetPurpose(44)
+
 	grpcEndpoints := []string{
 		"grpc.terra-classic.hexxagon.io:443",
 		"terra-classic-grpc.publicnode.com:443",
 	}
 
-	grpcClient, err := client.NewClient(grpcEndpoints, true)
+	logger := zerolog.Nop()
+	grpcClient, err := client.NewClient(client.ClientConfig{
+		Endpoints:         grpcEndpoints,
+		ChainID:           "columbus-5",
+		EnableTLS:         true,
+		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
+		Logger:            logger,
+	})
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client: %v", err)
 	}
-	defer grpcClient.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := grpcClient.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to gRPC: %v", err)
-	}
-
 	// Garuda LUNC/USDC pair configuration
 	config := map[string]interface{}{
-		"contract_address": "terra1vnt3tjg0v98hgp0vx8nynvklnjqzkzsqvtpzv9v56r800gdhmxwstv5y64",
-		"pair_info": map[string]interface{}{
-			"symbol":     "LUNC/USDC",
-			"token0":     "uluna",
-			"token1":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
-			"decimals0":  6,
-			"decimals1":  6,
-			"is_native0": true,
-			"is_native1": false,
+		"pairs": []interface{}{
+			map[string]interface{}{
+				"symbol":           "LUNC/USDC",
+				"contract_address": "terra1vnt3tjg0v98hgp0vx8nynvklnjqzkzsqvtpzv9v56r800gdhmxwstv5y64",
+				"asset0_denom":     "uluna",
+				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+				"decimals0":        6,
+				"decimals1":        6,
+			},
 		},
 	}
 
@@ -299,28 +330,38 @@ func TestAllCosmWasmDEXs(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	// Configure SDK
+	sdkConfig := sdk.GetConfig()
+	sdkConfig.SetBech32PrefixForAccount("terra", "terrapub")
+	sdkConfig.SetBech32PrefixForValidator("terravaloper", "terravaloperpub")
+	sdkConfig.SetBech32PrefixForConsensusNode("terravalcons", "terravalconspub")
+	sdkConfig.SetCoinType(330)
+	sdkConfig.SetPurpose(44)
+
 	grpcEndpoints := []string{
 		"grpc.terra-classic.hexxagon.io:443",
 		"terra-classic-grpc.publicnode.com:443",
 	}
 
-	grpcClient, err := client.NewClient(grpcEndpoints, true)
+	logger := zerolog.Nop()
+	grpcClient, err := client.NewClient(client.ClientConfig{
+		Endpoints:         grpcEndpoints,
+		ChainID:           "columbus-5",
+		EnableTLS:         true,
+		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
+		Logger:            logger,
+	})
 	if err != nil {
 		t.Fatalf("Failed to create gRPC client: %v", err)
 	}
-	defer grpcClient.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	if err := grpcClient.Connect(ctx); err != nil {
-		t.Fatalf("Failed to connect to gRPC: %v", err)
-	}
-
 	configs := []struct {
-		name     string
-		address  string
-		factory  func(map[string]interface{}, *client.Client) (interface{}, error)
+		name    string
+		address string
+		factory func(map[string]interface{}, *client.Client) (interface{}, error)
 	}{
 		{
 			name:    "terraport",
@@ -350,15 +391,15 @@ func TestAllCosmWasmDEXs(t *testing.T) {
 	for _, tc := range configs {
 		t.Run(tc.name, func(t *testing.T) {
 			config := map[string]interface{}{
-				"contract_address": tc.address,
-				"pair_info": map[string]interface{}{
-					"symbol":     "LUNC/USDC",
-					"token0":     "uluna",
-					"token1":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
-					"decimals0":  6,
-					"decimals1":  6,
-					"is_native0": true,
-					"is_native1": false,
+				"pairs": []interface{}{
+					map[string]interface{}{
+						"symbol":           "LUNC/USDC",
+						"contract_address": tc.address,
+						"asset0_denom":     "uluna",
+						"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+						"decimals0":        6,
+						"decimals1":        6,
+					},
 				},
 			}
 
@@ -367,15 +408,8 @@ func TestAllCosmWasmDEXs(t *testing.T) {
 				t.Fatalf("Failed to create %s source: %v", tc.name, err)
 			}
 
-			// Type assert based on which factory was used
-			var source interface {
-				Initialize(context.Context) error
-				Start(context.Context) error
-				Stop() error
-				GetPrices(context.Context) (map[string]interface{}, error)
-				IsHealthy() bool
-				Name() string
-			}
+			// Use sources.Source interface directly
+			var source sources.Source
 
 			switch s := sourceInterface.(type) {
 			case *TerraportSource:
@@ -407,20 +441,9 @@ func TestAllCosmWasmDEXs(t *testing.T) {
 				return
 			}
 
-			for symbol, priceData := range prices {
-				// Extract price from the interface{} (it's a Price struct)
-				var price decimal.Decimal
-				if p, ok := priceData.(struct {
-					Symbol    string
-					Price     decimal.Decimal
-					Volume    decimal.Decimal
-					Timestamp time.Time
-					Source    string
-				}); ok {
-					price = p.Price
-					t.Logf("%s %s: %s", tc.name, symbol, price.String())
-					allPrices[tc.name] = price
-				}
+			for symbol, price := range prices {
+				t.Logf("%s %s: %s", tc.name, symbol, price.Price.String())
+				allPrices[tc.name] = price.Price
 
 				if !source.IsHealthy() {
 					t.Errorf("%s should be healthy", tc.name)
