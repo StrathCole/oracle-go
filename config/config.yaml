@@ -1,0 +1,273 @@
+# Oracle-Go Configuration
+# This is the default configuration for running oracle-go in various modes
+
+# Runtime mode: "both", "server", or "feeder"
+# Can be overridden with --server or --feeder flags
+mode: both
+
+# Price Server Configuration
+server:
+  # HTTP API server
+  http:
+    addr: ":8080"
+    tls:
+      enabled: false
+      cert: ""
+      key: ""
+  
+  # WebSocket server for real-time price streaming
+  websocket:
+    enabled: true
+    addr: ":8081"
+  
+  # Price cache TTL (how long to cache aggregated prices)
+  cache_ttl: 60s
+  
+  # Aggregation method: "median", "average", or "tvwap"
+  aggregate_mode: median
+
+# Feeder Configuration (for submitting oracle votes)
+feeder:
+  # Terra Classic chain ID
+  chain_id: columbus-5
+  
+  # gRPC endpoint (primary)
+  grpc_endpoint: "grpc.terra-classic.hexxagon.io:443"
+  
+  # gRPC endpoints (supports multiple for failover)
+  grpc_endpoints:
+    - "grpc.terra-classic.hexxagon.io:443"
+    - "terra-classic-grpc.publicnode.com:443"
+  
+  # Enable TLS for gRPC
+  enable_tls: true
+  
+  # Validator addresses to submit votes for
+  validators:
+    - terravaloper1xxx...  # Replace with actual validator address
+  
+  # Mnemonic for feeder account (use mnemonic_env for production!)
+  mnemonic: ""  # Leave empty if using mnemonic_env
+  
+  # Environment variable containing mnemonic (recommended for production)
+  mnemonic_env: ORACLE_FEEDER_MNEMONIC
+  
+  # Fee configuration
+  fee_amount: "100000uluna"  # Fixed fee amount (0.1 LUNC per message)
+  gas_limit: 200000          # Gas limit (0 = auto estimate)
+  gas_price: "0.015"         # Gas price in uluna (used for fee calculation if fee_amount not set)
+  
+  # Price source for feeder
+  price_source:
+    url: http://localhost:8080/v1/prices
+    fallback_urls: []
+    type: http  # "http", "grpc", or "websocket"
+  
+  # Vote period (in blocks, default: 30 blocks ~30 seconds)
+  vote_period: 30
+
+# Price Sources Configuration
+sources:
+  # CoinGecko (REST API)
+  - type: cex
+    name: coingecko
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        "LUNC/USD": "terra-luna"
+        "USTC/USD": "terrausd"
+        "BTC/USD": "bitcoin"
+        "ETH/USD": "ethereum"
+      update_interval: 60s
+  
+  # Binance (WebSocket - Real-time with kline_5m)
+  - type: cex
+    name: binance
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        "LUNC/USDT": "LUNCUSDT"
+        "USTC/USDT": "USTCUSDT"
+        "BTC/USDT": "BTCUSDT"
+        "ETH/USDT": "ETHUSDT"
+      websocket_url: "wss://stream.binance.com:9443"
+  
+  # Bitfinex (REST API)
+  - type: cex
+    name: bitfinex
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        "LUNC/USD": "tLUNCUSD"
+        "USTC/USD": "tUSTCUSD"
+        "BTC/USD": "tBTCUSD"
+        "ETH/USD": "tETHUSD"
+  
+  # Bybit (REST API)
+  - type: cex
+    name: bybit
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        "LUNC/USDT": "LUNCUSDT"
+        "BTC/USDT": "BTCUSDT"
+        "ETH/USDT": "ETHUSDT"
+  
+  # Gate.io (REST API)
+  - type: cex
+    name: gateio
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        "LUNC/USDT": "LUNC_USDT"
+        "BTC/USDT": "BTC_USDT"
+        "ETH/USDT": "ETH_USDT"
+  
+  # OKX (REST API)
+  - type: cex
+    name: okx
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        "LUNC/USDT": "LUNC-USDT"
+        "BTC/USDT": "BTC-USDT"
+        "ETH/USDT": "ETH-USDT"
+  
+  # CoinMarketCap (REST API - requires API key)
+  - type: cex
+    name: coinmarketcap
+    enabled: false  # Requires API key
+    priority: 2
+    config:
+      pairs:
+        "LUNC/USD": "terra-luna-classic"
+        "USTC/USD": "terrausd-classic"
+        "BTC/USD": "bitcoin"
+        "ETH/USD": "ethereum"
+      api_key: "YOUR_API_KEY_HERE"  # Set via environment variable
+  
+  # Terraport DEX (CosmWasm via gRPC)
+  - type: cosmwasm
+    name: terraport
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        - symbol: "LUNC/USTC"
+          contract_address: "terra1...replaceme"
+          asset0_denom: "uluna"
+          asset1_denom: "uusd"
+          decimals0: 6
+          decimals1: 6
+      update_interval: 30s
+  
+  # Terraswap DEX (CosmWasm via gRPC)
+  - type: cosmwasm
+    name: terraswap
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        - symbol: "LUNC/USTC"
+          contract_address: "terra1...replaceme"
+          asset0_denom: "uluna"
+          asset1_denom: "uusd"
+          decimals0: 6
+          decimals1: 6
+      update_interval: 30s
+  
+  # Garuda DeFi (CosmWasm via gRPC)
+  - type: cosmwasm
+    name: garuda
+    enabled: true
+    priority: 1
+    config:
+      pairs:
+        - symbol: "LUNC/USTC"
+          contract_address: "terra1...replaceme"
+          asset0_denom: "uluna"
+          asset1_denom: "uusd"
+          decimals0: 6
+          decimals1: 6
+      update_interval: 30s
+  
+  # Example: Fiat rates from Frankfurter (free, no API key)
+  - type: fiat
+    name: frankfurter
+    enabled: true
+    priority: 1
+    config:
+      symbols: ["EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD", "CNY/USD", "CAD/USD", "AUD/USD"]
+      timeout: 5000      # milliseconds
+      interval: 30000    # milliseconds (30 seconds)
+  
+  # FER.ee fiat rates (free, no API key)
+  - type: fiat
+    name: fer
+    enabled: true
+    priority: 1
+    config:
+      symbols: ["EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD", "CNY/USD", "MNT/USD"]
+      timeout: 5000
+      interval: 30000
+  
+  # IMF SDR rates (free, no API key)
+  - type: fiat
+    name: imf
+    enabled: true
+    priority: 1
+    config:
+      symbols: ["SDR/USD"]
+      timeout: 10000
+      interval: 300000   # 5 minutes
+  
+  # Band Protocol oracle (free, no API key)
+  - type: oracle
+    name: band
+    enabled: true
+    priority: 1
+    config:
+      symbols: ["BTC/USD", "ETH/USD", "EUR/USD", "GBP/USD", "JPY/USD"]
+      timeout: 10000
+      interval: 60000    # 1 minute
+  
+  # Example: ExchangeRate.host (requires API key)
+  - type: fiat
+    name: exchangerate_api
+    enabled: false  # Requires API key
+    priority: 2
+    config:
+      symbols: ["EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD"]
+      api_key_env: EXCHANGERATE_API_KEY
+      timeout: 5000
+      interval: 30000
+
+# Prometheus Metrics
+metrics:
+  enabled: true
+  addr: ":9091"
+  path: /metrics
+
+# Logging Configuration
+logging:
+  # Level: "debug", "info", "warn", "error"
+  level: info
+  
+  # Format: "json" or "text"
+  format: text
+  
+  # Output: "stdout", "stderr", or file path
+  output: stdout
+  
+  # File rotation (only used if output is a file path)
+  file:
+    path: /var/log/oracle-go/oracle.log
+    max_size: 100      # MB
+    max_backups: 3     # Number of old log files to retain
+    max_age: 28        # Days

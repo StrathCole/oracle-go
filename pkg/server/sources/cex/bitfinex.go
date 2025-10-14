@@ -1,0 +1,205 @@
+package cex
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/shopspring/decimal"
+	"tc.com/oracle-prices/pkg/logging"
+	"tc.com/oracle-prices/pkg/metrics"
+	"tc.com/oracle-prices/pkg/server/sources"
+)
+
+const (
+	bitfinexAPIURL   = "https://api-pub.bitfinex.com/v2/tickers"
+	bitfinexPollRate = 60 * time.Second
+)
+
+// BitfinexSource fetches prices from Bitfinex REST API
+type BitfinexSource struct {
+	*sources.BaseSource
+
+	apiURL string
+}
+
+// NewBitfinexSource creates a new Bitfinex REST source
+func NewBitfinexSource(config map[string]interface{}) (sources.Source, error) {
+	logger, _ := logging.Init("info", "text", "stdout")
+
+	// Parse pairs from config (map of "LUNC/USD" => "tLUNCUSD")
+	pairs, err := sources.ParsePairsFromMap(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pairs: %w", err)
+	}
+
+	apiURL := bitfinexAPIURL
+	if url, ok := config["api_url"].(string); ok && url != "" {
+		apiURL = url
+	}
+
+	// Create base source with pair mappings
+	base := sources.NewBaseSource("bitfinex", sources.SourceTypeCEX, pairs, logger)
+
+	return &BitfinexSource{
+		BaseSource: base,
+		apiURL:     apiURL,
+	}, nil
+}
+
+// Initialize prepares the source for operation
+func (s *BitfinexSource) Initialize(ctx context.Context) error {
+	s.Logger().Info("Initializing Bitfinex source", "symbols", s.Symbols())
+	return nil
+}
+
+// Start begins fetching prices
+func (s *BitfinexSource) Start(ctx context.Context) error {
+	s.Logger().Info("Starting Bitfinex source")
+
+	// Initial fetch
+	if err := s.fetchPrices(ctx); err != nil {
+		s.Logger().Warn("Initial fetch failed", "error", err)
+	}
+
+	// Start polling loop
+	go s.pollLoop(ctx)
+
+	return nil
+}
+
+// Stop stops the source
+func (s *BitfinexSource) Stop() error {
+	s.Logger().Info("Bitfinex source stopped")
+	return nil
+}
+
+// GetPrices returns the current prices
+func (s *BitfinexSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+	prices := s.GetAllPrices()
+	if len(prices) == 0 {
+		return nil, fmt.Errorf("no prices available")
+	}
+	return prices, nil
+}
+
+// Subscribe is not implemented for REST sources
+func (s *BitfinexSource) Subscribe(updates chan<- sources.PriceUpdate) error {
+	s.AddSubscriber(updates)
+	return nil
+}
+
+// pollLoop periodically fetches prices
+func (s *BitfinexSource) pollLoop(ctx context.Context) {
+	ticker := time.NewTicker(bitfinexPollRate)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.StopChan():
+			return
+		case <-ticker.C:
+			if err := s.fetchPrices(ctx); err != nil {
+				s.Logger().Error("Failed to fetch prices", "error", err)
+				s.SetHealthy(false)
+			}
+		}
+	}
+}
+
+// fetchPrices fetches current prices from Bitfinex API
+func (s *BitfinexSource) fetchPrices(ctx context.Context) error {
+	// Build symbols parameter from pair mappings
+	symbolsParam := make([]string, 0, len(s.GetAllPairs()))
+	symbolMap := make(map[string]string) // bitfinex symbol -> unified symbol
+
+	for unifiedSymbol, bitfinexSymbol := range s.GetAllPairs() {
+		symbolsParam = append(symbolsParam, bitfinexSymbol)
+		symbolMap[bitfinexSymbol] = unifiedSymbol
+		s.Logger().Debug("Bitfinex pair mapping", "unified", unifiedSymbol, "bitfinex", bitfinexSymbol)
+	}
+
+	symbolsQuery := strings.Join(symbolsParam, ",")
+
+	// Make request
+	url := fmt.Sprintf("%s?symbols=%s", s.apiURL, symbolsQuery)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch prices: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Parse response: array of ticker arrays
+	// Each ticker is: [SYMBOL, BID, BID_SIZE, ASK, ASK_SIZE, DAILY_CHANGE, DAILY_CHANGE_RELATIVE, LAST_PRICE, VOLUME, HIGH, LOW]
+	var tickers [][]interface{}
+	if err := json.Unmarshal(body, &tickers); err != nil {
+		return fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	now := time.Now()
+	updateCount := 0
+
+	for _, ticker := range tickers {
+		if len(ticker) < 8 {
+			s.Logger().Warn("Invalid ticker format", "ticker", ticker)
+			continue
+		}
+
+		// Index 0: symbol (string)
+		// Index 7: last price (float64)
+		bitfinexSymbol, ok := ticker[0].(string)
+		if !ok {
+			continue
+		}
+
+		priceFloat, ok := ticker[7].(float64)
+		if !ok {
+			continue
+		}
+
+		// Get unified symbol from Bitfinex symbol
+		unifiedSymbol, ok := symbolMap[bitfinexSymbol]
+		if !ok {
+			continue
+		}
+
+		// Use BaseSource SetPrice
+		s.SetPrice(unifiedSymbol, decimal.NewFromFloat(priceFloat), now)
+		metrics.RecordSourceUpdate(s.Name(), unifiedSymbol)
+		updateCount++
+	}
+
+	if updateCount > 0 {
+		s.SetHealthy(true)
+		metrics.RecordSourceHealth(s.Name(), string(s.Type()), true)
+		s.Logger().Debug("Updated prices", "count", updateCount)
+	}
+
+	return nil
+}
+
+func init() {
+	sources.Register("cex.bitfinex", func(config map[string]interface{}) (sources.Source, error) {
+		return NewBitfinexSource(config)
+	})
+}
