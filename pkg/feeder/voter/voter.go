@@ -54,6 +54,10 @@ type Voter struct {
 	gasPrice      string
 	feeDenom      string
 	dryRun        bool // If true, create votes but don't submit them
+	verify        bool // If true (with DryRun), verify votes against on-chain rates
+
+	// Verification state
+	lastVotePrices map[string]sdk.Dec // Last submitted vote prices (denom -> rate)
 }
 
 // Config contains voter configuration
@@ -67,6 +71,7 @@ type Config struct {
 	GasPrice      string
 	FeeDenom      string
 	DryRun        bool // If true, create votes but don't submit them
+	Verify        bool // If true (with DryRun), verify votes against on-chain rates
 }
 
 // NewVoter creates a new voter instance
@@ -100,21 +105,23 @@ func NewVoter(
 	}
 
 	return &Voter{
-		chainID:       cfg.ChainID,
-		validators:    validators,
-		feeder:        feeder,
-		priceClient:   priceClient,
-		grpcClient:    grpcClient,
-		broadcaster:   broadcaster,
-		eventStream:   eventStream,
-		logger:        logger,
-		prevotes:      make(map[string]*oracle.Prevote),
-		state:         StateIdle,
-		maxRetries:    cfg.MaxRetries,
-		retryInterval: cfg.RetryInterval,
-		gasPrice:      cfg.GasPrice,
-		feeDenom:      cfg.FeeDenom,
-		dryRun:        cfg.DryRun,
+		chainID:        cfg.ChainID,
+		validators:     validators,
+		feeder:         feeder,
+		priceClient:    priceClient,
+		grpcClient:     grpcClient,
+		broadcaster:    broadcaster,
+		eventStream:    eventStream,
+		logger:         logger,
+		prevotes:       make(map[string]*oracle.Prevote),
+		state:          StateIdle,
+		maxRetries:     cfg.MaxRetries,
+		retryInterval:  cfg.RetryInterval,
+		gasPrice:       cfg.GasPrice,
+		feeDenom:       cfg.FeeDenom,
+		dryRun:         cfg.DryRun,
+		verify:         cfg.Verify,
+		lastVotePrices: make(map[string]sdk.Dec),
 	}, nil
 }
 
@@ -123,6 +130,8 @@ func (v *Voter) Start(ctx context.Context) error {
 	v.logger.Info().
 		Str("chain_id", v.chainID).
 		Int("validators", len(v.validators)).
+		Bool("dry_run", v.dryRun).
+		Bool("verify", v.verify).
 		Msg("Starting event-driven oracle voter")
 
 	// Listen for voting period and param updates
@@ -137,6 +146,20 @@ func (v *Voter) Start(ctx context.Context) error {
 				Uint64("height", vp.Height).
 				Uint64("period", vp.Period).
 				Msg("Voting period started, performing vote cycle")
+
+			// If verification is enabled, verify the previous vote before starting new cycle
+			if v.verify && v.dryRun && vp.Period > 0 {
+				v.logger.Info().
+					Uint64("period", vp.Period-1).
+					Msg("Verifying previous period's vote against on-chain rates")
+
+				if err := v.verifyVotesAgainstChain(ctx); err != nil {
+					v.logger.Error().
+						Err(err).
+						Msg("Vote verification failed")
+					// Continue despite verification error
+				}
+			}
 
 			if err := v.performVoteCycle(ctx, vp.Period); err != nil {
 				v.logger.Error().
@@ -302,6 +325,23 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 	// Store prevote for next period (only if transaction succeeded)
 	v.prevotes[valKey] = prevote
 
+	// Store the current vote prices for verification (if enabled)
+	if v.verify && v.dryRun {
+		// Parse the vote string to extract prices for verification
+		votePrices, err := oracle.ParseExchangeRates(prevote.Vote)
+		if err != nil {
+			v.logger.Warn().
+				Err(err).
+				Str("vote_string", prevote.Vote).
+				Msg("Failed to parse vote for verification storage")
+		} else {
+			v.lastVotePrices = votePrices
+			v.logger.Debug().
+				Int("stored_prices", len(votePrices)).
+				Msg("Stored vote prices for verification")
+		}
+	}
+
 	v.logger.Info().
 		Str("validator", valKey).
 		Uint64("period", period).
@@ -317,12 +357,12 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 	// Dry-run mode: log the vote details but don't actually submit
 	if v.dryRun {
 		v.logger.Warn().Msg("DRY RUN MODE: Transaction would be broadcast but is skipped")
-		
+
 		for i, msg := range msgs {
 			// Use String() to get message representation
 			msgStr := msg.String()
 			msgType := fmt.Sprintf("%T", msg)
-			
+
 			// Try to identify message type from string representation
 			if strings.Contains(msgType, "MsgAggregateExchangeRatePrevote") {
 				v.logger.Info().
@@ -346,7 +386,7 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 					Msg("DRY RUN: Would submit message")
 			}
 		}
-		
+
 		return nil // Pretend success in dry-run mode
 	}
 
@@ -450,13 +490,14 @@ func (v *Voter) fetchPrices(ctx context.Context) (map[string]decimal.Decimal, er
 // convertToOraclePrices converts price map to oracle.Price slice and filters by whitelist.
 // CRITICAL: Oracle expects exchange rates in terms of LUNC, not USD!
 // Format: "How many of this currency equals 1 LUNC"
-// 
+//
 // Price server gives us Fiat/USD rates (e.g., AUD/USD = 0.649 means 1 AUD = 0.649 USD)
 // We need to convert to Fiat/LUNC (how many fiat per 1 LUNC)
-// 
+//
 // Formula: fiat_per_lunc = (1 / fiat_per_usd) × lunc_per_usd
 // Example: If AUD/USD = 0.649 and LUNC/USD = 0.00004122
-//          Then AUD/LUNC = (1 / 0.649) × 0.00004122 = 1.54 × 0.00004122 = 0.0000634
+//
+//	Then AUD/LUNC = (1 / 0.649) × 0.00004122 = 1.54 × 0.00004122 = 0.0000634
 func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whitelist []string) []oracle.Price {
 	// Create set of whitelisted denoms for fast lookup
 	whitelistSet := make(map[string]bool)
@@ -503,6 +544,12 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 			continue
 		}
 
+		priceFloat, _ := price.Float64()
+		if priceFloat == 0 {
+			v.logger.Warn().Str("symbol", symbol).Msg("Zero price for symbol, skipping")
+			continue
+		}
+
 		// Convert fiat/USD to fiat/LUNC
 		// Price server gives us: Fiat/USD (e.g., AUD/USD = 0.649 means 1 AUD = 0.649 USD)
 		// We need: Fiat/LUNC (how many fiat per 1 LUNC)
@@ -510,14 +557,10 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 		//        = (usd_per_fiat) * (lunc/usd)
 		// Example: If AUD/USD = 0.649 and LUNC/USD = 0.00004122
 		//          Then AUD/LUNC = (1 / 0.649) * 0.00004122 = 1.54 * 0.00004122 = 0.0000634
-		priceFloat, _ := price.Float64()
-		if priceFloat == 0 {
-			v.logger.Warn().Str("symbol", symbol).Msg("Zero price for symbol, skipping")
-			continue
-		}
-		
-		usdPerFiat := 1.0 / priceFloat  // Invert: USD/Fiat
-		fiatPerLunc := usdPerFiat * luncUSDFloat  // USD/Fiat × LUNC/USD = Fiat/LUNC
+		// Note: This applies to ALL fiat currencies including SDR
+
+		usdPerFiat := 1.0 / priceFloat           // Invert: USD/Fiat
+		fiatPerLunc := usdPerFiat * luncUSDFloat // USD/Fiat × LUNC/USD = Fiat/LUNC
 
 		result = append(result, oracle.Price{
 			Denom: denom,
@@ -628,4 +671,78 @@ func (v *Voter) GetState() VotingState {
 // GetLastVotePeriod returns the last period we voted in
 func (v *Voter) GetLastVotePeriod() uint64 {
 	return v.lastVotePeriod
+}
+
+// verifyVotesAgainstChain compares the last submitted vote with on-chain exchange rates
+// and logs any deviations > 1%
+func (v *Voter) verifyVotesAgainstChain(ctx context.Context) error {
+	v.logger.Debug().
+		Bool("verify", v.verify).
+		Bool("dry_run", v.dryRun).
+		Int("stored_prices", len(v.lastVotePrices)).
+		Msg("verifyVotesAgainstChain called")
+
+	if !v.verify || !v.dryRun {
+		v.logger.Debug().
+			Bool("verify", v.verify).
+			Bool("dry_run", v.dryRun).
+			Msg("Skipping verification (not enabled or not in dry-run mode)")
+		return nil // Only verify in dry-run mode with --verify flag
+	}
+
+	if len(v.lastVotePrices) == 0 {
+		v.logger.Info().Msg("No previous vote to verify (this is normal for the first period)")
+		return nil
+	}
+
+	v.logger.Info().Msg("Starting vote verification against on-chain rates...")
+
+	// Query on-chain exchange rates
+	exchangeRates, err := v.grpcClient.GetExchangeRates(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query on-chain exchange rates: %w", err)
+	}
+
+	v.logger.Info().
+		Int("vote_denoms", len(v.lastVotePrices)).
+		Int("chain_denoms", len(exchangeRates)).
+		Msg("Starting vote verification against on-chain rates")
+
+	// Compare each price
+	for denom, votedRate := range v.lastVotePrices {
+		// Find on-chain rate for this denom
+		var chainRate sdk.Dec
+		found := false
+		for _, coin := range exchangeRates {
+			if coin.Denom == denom {
+				chainRate = coin.Amount
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			v.logger.Warn().
+				Str("denom", denom).
+				Msg("Denom not found in on-chain rates (may not have enough votes)")
+			continue
+		}
+
+		// Calculate percentage difference
+		// diff = (voted - chain) / chain * 100
+		diff := votedRate.Sub(chainRate).Quo(chainRate).MulInt64(100)
+		diffAbs := diff.Abs()
+		diffPercent, _ := diffAbs.Float64()
+
+		// Compare against 1.0 since diff is already in percentage (multiplied by 100)
+		if diffAbs.GTE(sdk.OneDec()) { // >= 1%
+			v.logger.Warn().Msgf("⚠️  %s: DEVIATION %.4f%% (voted=%s, chain=%s)", 
+				denom, diffPercent, votedRate.String(), chainRate.String())
+		} else {
+			v.logger.Info().Msgf("✓ %s: %.4f%% diff", denom, diffPercent)
+		}
+	}
+
+	v.logger.Info().Msg("Vote verification complete")
+	return nil
 }

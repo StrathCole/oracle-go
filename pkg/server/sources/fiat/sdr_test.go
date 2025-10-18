@@ -15,7 +15,7 @@ func TestSDRSource_Initialize(t *testing.T) {
 		"interval": 300,
 	}
 
-	source, err := NewSDRSource(cfg)
+	source, err := NewSDRSourceFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewSDRSource failed: %v", err)
 	}
@@ -34,8 +34,8 @@ func TestSDRSource_Initialize(t *testing.T) {
 	}
 
 	symbols := source.Symbols()
-	if len(symbols) != 1 || symbols[0] != "SDR" {
-		t.Errorf("Expected symbols [SDR], got %v", symbols)
+	if len(symbols) != 1 || symbols[0] != "SDR/USD" {
+		t.Errorf("Expected symbols [SDR/USD], got %v", symbols)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestSDRSource_CalculateSDR(t *testing.T) {
 		"interval": 300,
 	}
 
-	sdrSource, err := NewSDRSource(cfg)
+	sdrSource, err := NewSDRSourceFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewSDRSource failed: %v", err)
 	}
@@ -80,6 +80,7 @@ func TestSDRSource_CalculateSDR(t *testing.T) {
 		name:    "mock",
 		healthy: true,
 		prices: map[string]sources.Price{
+			"USD/USD": {Symbol: "USD/USD", Price: decimal.NewFromFloat(1.0)}, // Added USD/USD
 			"EUR/USD": {Symbol: "EUR/USD", Price: decimal.NewFromFloat(1.16)},
 			"CNY/USD": {Symbol: "CNY/USD", Price: decimal.NewFromFloat(0.14)},
 			"JPY/USD": {Symbol: "JPY/USD", Price: decimal.NewFromFloat(0.0066)},
@@ -90,7 +91,7 @@ func TestSDRSource_CalculateSDR(t *testing.T) {
 	source.SetFiatSources([]sources.Source{mockSource})
 
 	// Calculate SDR
-	err = source.calculateSDR()
+	err = source.calculateSDR(context.Background())
 	if err != nil {
 		t.Fatalf("calculateSDR failed: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestSDRSource_MissingCurrencies(t *testing.T) {
 		"interval": 300,
 	}
 
-	sdrSource, err := NewSDRSource(cfg)
+	sdrSource, err := NewSDRSourceFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewSDRSource failed: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestSDRSource_MissingCurrencies(t *testing.T) {
 	source.SetFiatSources([]sources.Source{mockSource})
 
 	// Should fail due to missing currency
-	err = source.calculateSDR()
+	err = source.calculateSDR(context.Background())
 	if err == nil {
 		t.Error("Expected error for missing basket currencies, got nil")
 	}

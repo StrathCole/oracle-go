@@ -2,7 +2,20 @@ package sources
 
 import (
 	"fmt"
+
+	"tc.com/oracle-prices/pkg/logging"
 )
+
+// GetLoggerFromConfig extracts logger from config map or returns nil
+// Sources should use this to get the logger passed from main.go
+func GetLoggerFromConfig(config map[string]interface{}) *logging.Logger {
+	if loggerInterface, ok := config["logger"]; ok {
+		if logger, ok := loggerInterface.(*logging.Logger); ok {
+			return logger
+		}
+	}
+	return nil
+}
 
 // ParsePairsFromMap extracts pair mappings from config where pairs is a map
 // Expected format: pairs: { "LUNC/USDT": "LUNCUSDT", "BTC/USD": "bitcoin" }

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -18,7 +17,7 @@ import (
 // Requires API key (paid service)
 type ExchangeRateSource struct {
 	*sources.BaseSource
-	
+
 	apiKey   string
 	timeout  time.Duration
 	interval time.Duration
@@ -31,13 +30,46 @@ type exchangeRateResponse struct {
 	Error   interface{}        `json:"error,omitempty"`
 }
 
-func NewExchangeRateSource(logger *logging.Logger, symbols []string, apiKey string, timeout, interval time.Duration) *ExchangeRateSource {
-	symbolStrs := make([]string, len(symbols))
-	for i, sym := range symbols {
-		symbolStrs[i] = string(sym)
+func NewExchangeRateSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
+	symbols, ok := config["symbols"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("symbols must be an array")
 	}
 
-	// Create pairs map for BaseSource (symbol -> quote currency)
+	symbolStrs := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		if str, ok := s.(string); ok {
+			if strings.HasSuffix(str, "/USD") || str == "SDR/USD" {
+				symbolStrs = append(symbolStrs, str)
+			}
+		}
+	}
+
+	if len(symbolStrs) == 0 {
+		return nil, fmt.Errorf("no valid symbols for ExchangeRate")
+	}
+
+	apiKey, ok := config["api_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("api_key is required for ExchangeRate")
+	}
+
+	timeout := 5 * time.Second
+	if t, ok := config["timeout"].(int); ok {
+		timeout = time.Duration(t) * time.Millisecond
+	}
+
+	interval := 30 * time.Second
+	if i, ok := config["interval"].(int); ok {
+		interval = time.Duration(i) * time.Millisecond
+	}
+
+	// Get logger from config (passed from main.go)
+	logger := sources.GetLoggerFromConfig(config)
+	if logger == nil {
+		return nil, fmt.Errorf("logger not provided in config")
+	}
+
 	pairs := make(map[string]string)
 	for _, symbol := range symbolStrs {
 		pairs[symbol] = "USD"
@@ -56,7 +88,7 @@ func NewExchangeRateSource(logger *logging.Logger, symbols []string, apiKey stri
 	}
 
 	s.Logger().Info("Initializing ExchangeRate source", "symbols", len(s.Symbols()))
-	return s
+	return s, nil
 }
 
 func (s *ExchangeRateSource) Initialize(ctx context.Context) error {
@@ -153,7 +185,7 @@ func (s *ExchangeRateSource) fetchWithRetries(ctx context.Context) error {
 
 func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	symbols := s.Symbols()
-	
+
 	// Convert symbols to API format
 	// SDR/USD -> XDR, EUR/USD -> EUR, etc.
 	apiSymbols := make([]string, 0, len(symbols))
@@ -229,4 +261,18 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 
 func (s *ExchangeRateSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
+}
+
+func (s *ExchangeRateSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+	return s.GetAllPrices(), nil
+}
+
+func (s *ExchangeRateSource) Subscribe(updates chan<- sources.PriceUpdate) error {
+	s.AddSubscriber(updates)
+	return nil
+}
+
+func (s *ExchangeRateSource) Stop() error {
+	s.Close()
+	return nil
 }

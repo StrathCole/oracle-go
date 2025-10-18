@@ -24,6 +24,7 @@ import (
 type Oracle interface {
 	AggregatePrevote(context.Context, *oracletypes.QueryAggregatePrevoteRequest, ...grpc.CallOption) (*oracletypes.QueryAggregatePrevoteResponse, error)
 	Params(context.Context, *oracletypes.QueryParamsRequest, ...grpc.CallOption) (*oracletypes.QueryParamsResponse, error)
+	ExchangeRates(context.Context, *oracletypes.QueryExchangeRatesRequest, ...grpc.CallOption) (*oracletypes.QueryExchangeRatesResponse, error)
 }
 
 // Auth defines the interface for authentication queries.
@@ -361,6 +362,19 @@ func (c *Client) GetOracleParams(ctx context.Context) (*oracletypes.Params, erro
 	}
 
 	return &resp.Params, nil
+}
+
+// GetExchangeRates retrieves all current exchange rates from the oracle module.
+// Uses failover if the query fails on the current endpoint.
+func (c *Client) GetExchangeRates(ctx context.Context) (sdk.DecCoins, error) {
+	resp, err := WithFailover(c, func() (*oracletypes.QueryExchangeRatesResponse, error) {
+		return c.OracleClient().ExchangeRates(ctx, &oracletypes.QueryExchangeRatesRequest{})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query exchange rates: %w", err)
+	}
+
+	return resp.ExchangeRates, nil
 }
 
 // BroadcastTx broadcasts a transaction to the chain using BROADCAST_MODE_SYNC.

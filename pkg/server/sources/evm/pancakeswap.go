@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
@@ -134,7 +133,7 @@ func NewPancakeSwapSource(config map[string]interface{}) (sources.Source, error)
 		pairMappings[pair.Symbol] = pair.Symbol // EVM doesn't transform symbols
 	}
 
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 	base := sources.NewBaseSource("pancakeswap_bsc", sources.SourceTypeEVM, pairMappings, logger)
 
 	source := &PancakeSwapSource{

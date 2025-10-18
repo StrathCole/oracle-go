@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
@@ -42,7 +41,7 @@ type GateioTicker struct {
 
 // NewGateioSource creates a new Gate.io REST source
 func NewGateioSource(config map[string]interface{}) (sources.Source, error) {
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 
 	// Parse pairs from config (map of "LUNC/USDT" => "LUNC_USDT")
 	pairs, err := sources.ParsePairsFromMap(config)

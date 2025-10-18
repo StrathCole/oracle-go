@@ -6,9 +6,10 @@ import (
 
 func init() {
 	// Register all fiat sources
-	sources.Register("fiat.frankfurter", NewFrankfurterSource)
-	sources.Register("fiat.imf", NewIMFSource)
-	sources.Register("fiat.sdr", NewSDRSource)
-	sources.Register("fiat.exchangerate", NewExchangeRateSource)
-	sources.Register("fiat.fixer", NewFixerSource)
+	sources.Register("fiat.frankfurter", NewFrankfurterSourceFromConfig)
+	sources.Register("fiat.imf", NewIMFSourceFromConfig)
+	sources.Register("fiat.fixer", NewFixerSourceFromConfig)
+	sources.Register("fiat.sdr", NewSDRSourceFromConfig)
+	sources.Register("fiat.exchangerate", NewExchangeRateSourceFromConfig)
+	sources.Register("fiat.exchangerate_free", NewExchangeRateFreeSourceFromConfig)
 }

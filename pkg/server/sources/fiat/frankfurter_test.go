@@ -15,7 +15,7 @@ func TestFrankfurterSource_Initialize(t *testing.T) {
 		"interval": 30,
 	}
 
-	source, err := NewFrankfurterSource(cfg)
+	source, err := NewFrankfurterSourceFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewFrankfurterSource failed: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestFrankfurterSource_FetchPrices(t *testing.T) {
 		"interval": 30000, // 30 seconds
 	}
 
-	source, err := NewFrankfurterSource(cfg)
+	source, err := NewFrankfurterSourceFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewFrankfurterSource failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestFrankfurterSource_Subscribe(t *testing.T) {
 		"interval": 30000, // 30 seconds
 	}
 
-	source, err := NewFrankfurterSource(cfg)
+	source, err := NewFrankfurterSourceFromConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewFrankfurterSource failed: %v", err)
 	}

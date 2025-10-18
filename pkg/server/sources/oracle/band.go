@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -23,7 +22,7 @@ const (
 // Supports both crypto and fiat price feeds
 type BandProtocolSource struct {
 	*sources.BaseSource
-	
+
 	timeout  time.Duration
 	interval time.Duration
 	client   *http.Client
@@ -70,9 +69,10 @@ func NewBandProtocolSource(config map[string]interface{}) (sources.Source, error
 		interval = time.Duration(i) * time.Millisecond
 	}
 
-	logger, err := logging.Init("info", "json", "stdout")
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+	// Get logger from config (passed from main.go)
+	logger := sources.GetLoggerFromConfig(config)
+	if logger == nil {
+		return nil, fmt.Errorf("logger not provided in config")
 	}
 
 	// Create symbol mapping (Band uses same symbols, no transformation needed)

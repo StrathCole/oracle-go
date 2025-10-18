@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
@@ -55,7 +54,7 @@ type CoinMarketCapResponse struct {
 
 // NewCoinMarketCapSource creates a new CoinMarketCap REST source
 func NewCoinMarketCapSource(config map[string]interface{}) (sources.Source, error) {
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 
 	// Parse pairs from config (map of "LUNC/USD" => "terra-luna-classic")
 	pairs, err := sources.ParsePairsFromMap(config)

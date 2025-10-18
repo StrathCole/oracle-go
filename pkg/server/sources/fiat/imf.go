@@ -7,13 +7,9 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -22,23 +18,14 @@ const imfSDRURL = "https://www.imf.org/external/np/fin/data/rms_sdrv.aspx"
 // IMFSource fetches SDR/USD price from IMF website (free, no API key)
 // https://www.imf.org/ - Official SDR valuations
 type IMFSource struct {
-	name          string
-	symbols       []string
-	timeout       time.Duration
-	interval      time.Duration
-	client        *http.Client
-	prices        map[string]sources.Price
-	pricesMu      sync.RWMutex
-	lastUpdate    time.Time
-	healthy       bool
-	healthMu      sync.RWMutex
-	subscribers   []chan<- sources.PriceUpdate
-	subscribersMu sync.RWMutex
-	stopChan      chan struct{}
-	logger        *logging.Logger
+	*sources.BaseSource
+
+	timeout  time.Duration
+	interval time.Duration
+	client   *http.Client
 }
 
-func NewIMFSource(config map[string]interface{}) (sources.Source, error) {
+func NewIMFSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbols, ok := config["symbols"].([]interface{})
 	if !ok || len(symbols) == 0 {
 		// Default to SDR only (IMF only supports SDR)
@@ -50,13 +37,13 @@ func NewIMFSource(config map[string]interface{}) (sources.Source, error) {
 		if str, ok := s.(string); ok {
 			// IMF only provides SDR/USD - accept both "SDR" and "SDR/USD"
 			if str == "SDR" || str == "SDR/USD" {
-				symbolStrs = append(symbolStrs, "SDR")
+				symbolStrs = append(symbolStrs, "SDR/USD")
 			}
 		}
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("IMF source only supports SDR symbol")
+		return nil, fmt.Errorf("IMF source requires SDR symbol")
 	}
 
 	timeout := 10 * time.Second
@@ -64,56 +51,60 @@ func NewIMFSource(config map[string]interface{}) (sources.Source, error) {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
-	interval := 5 * time.Minute // IMF updates daily, but check every 5 minutes
+	interval := 5 * time.Minute // IMF updates daily, check every 5 minutes
 	if i, ok := config["interval"].(int); ok {
 		interval = time.Duration(i) * time.Millisecond
 	}
 
-	logger, err := logging.Init("info", "json", "stdout")
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+	// Get logger from config (passed from main.go)
+	logger := sources.GetLoggerFromConfig(config)
+	if logger == nil {
+		return nil, fmt.Errorf("logger not provided in config")
 	}
 
-	return &IMFSource{
-		name:     "imf",
-		symbols:  symbolStrs,
-		timeout:  timeout,
-		interval: interval,
+	pairs := make(map[string]string)
+	for _, symbol := range symbolStrs {
+		pairs[symbol] = "USD"
+	}
+
+	baseSource := sources.NewBaseSource("imf", sources.SourceTypeFiat, pairs, logger)
+
+	s := &IMFSource{
+		BaseSource: baseSource,
+		timeout:    timeout,
+		interval:   interval,
 		client: &http.Client{
 			Timeout: timeout,
 		},
-		prices:   make(map[string]sources.Price),
-		stopChan: make(chan struct{}),
-		logger:   logger,
-	}, nil
+	}
+
+	s.Logger().Info("Initializing IMF source", "symbols", len(s.Symbols()))
+	return s, nil
 }
 
 func (s *IMFSource) Initialize(ctx context.Context) error {
-	s.logger.Info("Initializing IMF source for SDR/USD")
 	return nil
 }
 
 func (s *IMFSource) Start(ctx context.Context) error {
-	s.logger.Info("Starting IMF source")
+	s.Logger().Info("Starting IMF source")
 
-	// Initial fetch with retry
-	if err := s.retryFetch(ctx); err != nil {
-		s.logger.Warn("Initial SDR price fetch failed after retries", "error", err)
+	if err := s.fetchWithRetries(ctx); err != nil {
+		s.Logger().Warn("Initial SDR price fetch failed after retries", "error", err)
 	}
 
-	// Start periodic updates
 	go func() {
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-s.stopChan:
+			case <-s.StopChan():
 				return
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.retryFetch(ctx)
+				s.fetchWithRetries(ctx)
 			}
 		}
 	}()
@@ -121,7 +112,7 @@ func (s *IMFSource) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *IMFSource) retryFetch(ctx context.Context) error {
+func (s *IMFSource) fetchWithRetries(ctx context.Context) error {
 	maxRetries := 5
 	initialBackoff := time.Second
 	maxBackoff := 2 * time.Minute
@@ -129,21 +120,21 @@ func (s *IMFSource) retryFetch(ctx context.Context) error {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		select {
-		case <-s.stopChan:
+		case <-s.StopChan():
 			return fmt.Errorf("source stopped during retry")
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 
-		err := s.fetchSDRPrice(ctx)
+		err := s.fetchPrices(ctx)
 		if err == nil {
-			s.setHealthy(true)
+			s.SetHealthy(true)
 			return nil
 		}
 
 		lastErr = err
-		s.logger.Warn("Fetch attempt failed",
+		s.Logger().Warn("Fetch attempt failed",
 			"attempt", attempt,
 			"max_retries", maxRetries,
 			"error", err,
@@ -158,23 +149,23 @@ func (s *IMFSource) retryFetch(ctx context.Context) error {
 			backoff = maxBackoff
 		}
 
-		s.logger.Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
+		s.Logger().Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
 
 		select {
 		case <-time.After(backoff):
-		case <-s.stopChan:
+		case <-s.StopChan():
 			return fmt.Errorf("source stopped during backoff")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 
-	s.setHealthy(false)
-	s.logger.Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
+	s.SetHealthy(false)
+	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
 	return lastErr
 }
 
-func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
+func (s *IMFSource) fetchPrices(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", imfSDRURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -182,15 +173,9 @@ func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to fetch SDR page: %w", err)
+		return fmt.Errorf("failed to fetch IMF page: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests {
-		s.logger.Warn("Rate limit exceeded", "source", s.name)
-		s.setHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
-	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -198,174 +183,49 @@ func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Parse HTML to find SDR/USD rate
-	// Looking for pattern: "SDR1 = US$" followed by the rate
-	rate, err := s.parseSDRRate(string(body))
+	// Parse SDR rate from HTML
+	// Look for pattern: SDR1 = US$</td><td...>1.367670<sup>4</sup></td>
+	// The IMF page shows "SDR 1 = US$ X.XXXXXX" which is the rate we need
+	re := regexp.MustCompile(`SDR\s*1\s*=\s*US\$\s*</td>\s*<td[^>]*>\s*([\d.]+)`)
+	matches := re.FindSubmatch(body)
+	if len(matches) < 2 {
+		return fmt.Errorf("failed to find SDR rate in IMF page")
+	}
+
+	rateStr := string(matches[1])
+	rate, err := strconv.ParseFloat(rateStr, 64)
 	if err != nil {
-		return fmt.Errorf("failed to parse SDR rate: %w", err)
+		return fmt.Errorf("failed to parse SDR rate '%s': %w", rateStr, err)
+	}
+
+	if rate <= 0 {
+		return fmt.Errorf("invalid SDR rate: %f", rate)
 	}
 
 	now := time.Now()
-	price := sources.Price{
-		Symbol:    "SDR/USD",
-		Price:     decimal.NewFromFloat(rate),
-		Volume:    decimal.Zero,
-		Timestamp: now,
-		Source:    s.name,
-	}
+	s.SetPrice("SDR/USD", decimal.NewFromFloat(rate), now)
 
-	s.pricesMu.Lock()
-	s.prices["SDR/USD"] = price
-	s.lastUpdate = now
-	s.pricesMu.Unlock()
-
-	// Record metric
-	metrics.RecordSourceUpdate(s.name, "SDR/USD")
-
-	// Notify subscribers
-	prices := map[string]sources.Price{"SDR/USD": price}
-	s.notifySubscribers(prices, nil)
-
+	s.Logger().Info("Parsed SDR rate from IMF", "rate", rate)
 	return nil
-}
-
-func (s *IMFSource) parseSDRRate(html string) (float64, error) {
-	// Extract all table tags
-	tableRegex := regexp.MustCompile(`<table[^>]*>([\s\S]*?)</table>`)
-	tables := tableRegex.FindAllString(html, -1)
-
-	for _, table := range tables {
-		// Look for "SDR1 = US$" text
-		if strings.Contains(table, "SDR1 = US$") || strings.Contains(table, "SDR 1 = US$") {
-			// Extract table cells
-			tdRegex := regexp.MustCompile(`<td[^>]*>([\s\S]*?)</td>`)
-			cells := tdRegex.FindAllStringSubmatch(table, -1)
-
-			for i, cell := range cells {
-				cellText := strings.TrimSpace(stripHTML(cell[1]))
-				if strings.Contains(cellText, "SDR1 = US$") || strings.Contains(cellText, "SDR 1 = US$") {
-					// Next cell should contain the rate
-					if i+1 < len(cells) {
-						rateText := strings.TrimSpace(stripHTML(cells[i+1][1]))
-						var rate float64
-						var err error
-						
-						// Try parsing as single number first (most common format)
-						rate, err = strconv.ParseFloat(rateText, 64)
-						if err == nil && rate > 0 {
-							s.logger.Info("Parsed SDR rate from IMF", "rate", fmt.Sprintf("%.7f", rate))
-							return rate, nil
-						}
-						
-						// Rate format might be "1.32149 2" - try to take the first or second number
-						parts := strings.Fields(rateText)
-						if len(parts) >= 1 {
-							// Try first number
-							rate, err = strconv.ParseFloat(parts[0], 64)
-							if err == nil && rate > 0 {
-								s.logger.Info("Parsed SDR rate from IMF (multi-field, first)", "rate", fmt.Sprintf("%.7f", rate))
-								return rate, nil
-							}
-						}
-						if len(parts) >= 2 {
-							// Try second number
-							rate, err = strconv.ParseFloat(parts[1], 64)
-							if err == nil && rate > 0 {
-								s.logger.Info("Parsed SDR rate from IMF (multi-field, second)", "rate", fmt.Sprintf("%.7f", rate))
-								return rate, nil
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return 0, fmt.Errorf("SDR/USD rate not found in HTML")
-}
-
-func stripHTML(s string) string {
-	// Remove superscript and subscript tags with their content (footnote markers)
-	re := regexp.MustCompile(`<(sup|sub)[^>]*>.*?</(sup|sub)>`)
-	s = re.ReplaceAllString(s, "")
-	// Remove remaining HTML tags
-	re = regexp.MustCompile(`<[^>]*>`)
-	return re.ReplaceAllString(s, "")
-}
-
-func (s *IMFSource) Stop() error {
-	s.logger.Info("Stopping IMF source")
-	close(s.stopChan)
-	return nil
-}
-
-func (s *IMFSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-
-	result := make(map[string]sources.Price, len(s.prices))
-	for k, v := range s.prices {
-		result[k] = v
-	}
-
-	return result, nil
-}
-
-func (s *IMFSource) Subscribe(updates chan<- sources.PriceUpdate) error {
-	s.subscribersMu.Lock()
-	defer s.subscribersMu.Unlock()
-	s.subscribers = append(s.subscribers, updates)
-	return nil
-}
-
-func (s *IMFSource) Name() string {
-	return s.name
 }
 
 func (s *IMFSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *IMFSource) Symbols() []string {
-	return s.symbols
+func (s *IMFSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+	return s.GetAllPrices(), nil
 }
 
-func (s *IMFSource) IsHealthy() bool {
-	s.healthMu.RLock()
-	defer s.healthMu.RUnlock()
-	return s.healthy
+func (s *IMFSource) Subscribe(updates chan<- sources.PriceUpdate) error {
+	s.AddSubscriber(updates)
+	return nil
 }
 
-func (s *IMFSource) LastUpdate() time.Time {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-	return s.lastUpdate
-}
-
-func (s *IMFSource) setHealthy(healthy bool) {
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
-	s.healthy = healthy
-}
-
-func (s *IMFSource) notifySubscribers(prices map[string]sources.Price, err error) {
-	s.subscribersMu.RLock()
-	defer s.subscribersMu.RUnlock()
-
-	update := sources.PriceUpdate{
-		Source: s.name,
-		Prices: prices,
-		Error:  err,
-	}
-
-	for _, sub := range s.subscribers {
-		select {
-		case sub <- update:
-		default:
-			s.logger.Warn("Subscriber channel full, skipping update")
-		}
-	}
+func (s *IMFSource) Stop() error {
+	s.Close()
+	return nil
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/shopspring/decimal"
 	"tc.com/oracle-prices/pkg/feeder/client"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -93,7 +92,7 @@ func NewTerraswapSource(config map[string]interface{}, grpcClient *client.Client
 		}
 	}
 
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 
 	// Create base with simple pairs map
 	base := sources.NewBaseSource("terraswap", sources.SourceTypeCosmWasm, simplePairs, logger)

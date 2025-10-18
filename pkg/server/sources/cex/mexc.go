@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 	ws "tc.com/oracle-prices/pkg/server/sources/websocket"
 )
@@ -65,7 +64,7 @@ type MEXCDeal struct {
 
 // NewMEXCSource creates a new MEXC source (REST or WebSocket based on config)
 func NewMEXCSource(config map[string]interface{}) (sources.Source, error) {
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 
 	// Parse pairs from config (map of "LUNC/USDT" => "LUNCUSDT")
 	// MEXC uses simple concatenation without separators

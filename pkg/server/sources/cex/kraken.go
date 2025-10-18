@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -48,7 +47,7 @@ type KrakenResponse struct {
 
 // NewKrakenSource creates a new Kraken REST source
 func NewKrakenSource(config map[string]interface{}) (sources.Source, error) {
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 
 	// Parse pairs from config (map of "BTC/USD" => "XBTUSDT")
 	// Kraken uses their own pair naming (e.g., XBTUSDT for BTC/USDT)

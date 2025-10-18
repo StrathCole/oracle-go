@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -47,7 +46,7 @@ type HuobiResponse struct {
 
 // NewHuobiSource creates a new Huobi REST source
 func NewHuobiSource(config map[string]interface{}) (sources.Source, error) {
-	logger, _ := logging.Init("info", "text", "stdout")
+	logger := sources.GetLoggerFromConfig(config)
 
 	// Parse pairs from config (map of "LUNC/USDT" => "luncusdt")
 	pairs, err := sources.ParsePairsFromMap(config)

@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -18,21 +16,12 @@ import (
 // https://fixer.io/product
 // Requires API key (paid service)
 type FixerSource struct {
-	name          string
-	symbols       []string
-	apiKey        string
-	timeout       time.Duration
-	interval      time.Duration
-	client        *http.Client
-	prices        map[string]sources.Price
-	pricesMu      sync.RWMutex
-	lastUpdate    time.Time
-	healthy       bool
-	healthMu      sync.RWMutex
-	subscribers   []chan<- sources.PriceUpdate
-	subscribersMu sync.RWMutex
-	stopChan      chan struct{}
-	logger        *logging.Logger
+	*sources.BaseSource
+
+	apiKey   string
+	timeout  time.Duration
+	interval time.Duration
+	client   *http.Client
 }
 
 type fixerResponse struct {
@@ -41,7 +30,7 @@ type fixerResponse struct {
 	Error   interface{}        `json:"error,omitempty"`
 }
 
-func NewFixerSource(config map[string]interface{}) (sources.Source, error) {
+func NewFixerSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbols, ok := config["symbols"].([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("symbols must be an array")
@@ -50,25 +39,19 @@ func NewFixerSource(config map[string]interface{}) (sources.Source, error) {
 	symbolStrs := make([]string, 0, len(symbols))
 	for _, s := range symbols {
 		if str, ok := s.(string); ok {
-			symbolStrs = append(symbolStrs, str)
+			if strings.HasSuffix(str, "/USD") || str == "SDR/USD" {
+				symbolStrs = append(symbolStrs, str)
+			}
 		}
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("symbols list is required")
+		return nil, fmt.Errorf("no valid symbols for Fixer")
 	}
 
-	// Get API key from config or environment
-	apiKey := ""
-	if key, ok := config["api_key"].(string); ok && key != "" {
-		apiKey = key
-	} else if keyEnv, ok := config["api_key_env"].(string); ok && keyEnv != "" {
-		// In production, would read from os.Getenv(keyEnv)
-		return nil, fmt.Errorf("api_key_env not yet implemented, please provide api_key directly")
-	}
-
-	if apiKey == "" {
-		return nil, fmt.Errorf("api_key is required for Fixer source")
+	apiKey, ok := config["api_key"].(string)
+	if !ok {
+		return nil, fmt.Errorf("api_key is required for Fixer")
 	}
 
 	timeout := 5 * time.Second
@@ -76,57 +59,61 @@ func NewFixerSource(config map[string]interface{}) (sources.Source, error) {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
-	interval := 15 * time.Second // Update every 15s (vote period is 30s)
+	interval := 60 * time.Second
 	if i, ok := config["interval"].(int); ok {
 		interval = time.Duration(i) * time.Millisecond
 	}
 
-	logger, err := logging.Init("info", "json", "stdout")
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
+	// Get logger from config (passed from main.go)
+	logger := sources.GetLoggerFromConfig(config)
+	if logger == nil {
+		return nil, fmt.Errorf("logger not provided in config")
 	}
 
-	return &FixerSource{
-		name:     "fixer",
-		symbols:  symbolStrs,
-		apiKey:   apiKey,
-		timeout:  timeout,
-		interval: interval,
+	pairs := make(map[string]string)
+	for _, symbol := range symbolStrs {
+		pairs[symbol] = "USD"
+	}
+
+	baseSource := sources.NewBaseSource("fixer", sources.SourceTypeFiat, pairs, logger)
+
+	s := &FixerSource{
+		BaseSource: baseSource,
+		apiKey:     apiKey,
+		timeout:    timeout,
+		interval:   interval,
 		client: &http.Client{
 			Timeout: timeout,
 		},
-		prices:   make(map[string]sources.Price),
-		stopChan: make(chan struct{}),
-		logger:   logger,
-	}, nil
+	}
+
+	s.Logger().Info("Initializing Fixer source", "symbols", len(s.Symbols()))
+	return s, nil
 }
 
 func (s *FixerSource) Initialize(ctx context.Context) error {
-	s.logger.Info("Initializing Fixer source", "symbols", len(s.symbols))
 	return nil
 }
 
 func (s *FixerSource) Start(ctx context.Context) error {
-	s.logger.Info("Starting Fixer source")
+	s.Logger().Info("Starting Fixer source")
 
-	// Initial fetch with retry
-	if err := s.retryFetch(ctx); err != nil {
-		s.logger.Warn("Initial price fetch failed after retries", "error", err)
+	if err := s.fetchWithRetries(ctx); err != nil {
+		s.Logger().Warn("Initial price fetch failed after retries", "error", err)
 	}
 
-	// Start periodic updates
 	go func() {
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-s.stopChan:
+			case <-s.StopChan():
 				return
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.retryFetch(ctx)
+				s.fetchWithRetries(ctx)
 			}
 		}
 	}()
@@ -134,7 +121,7 @@ func (s *FixerSource) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *FixerSource) retryFetch(ctx context.Context) error {
+func (s *FixerSource) fetchWithRetries(ctx context.Context) error {
 	maxRetries := 5
 	initialBackoff := time.Second
 	maxBackoff := 2 * time.Minute
@@ -142,7 +129,7 @@ func (s *FixerSource) retryFetch(ctx context.Context) error {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		select {
-		case <-s.stopChan:
+		case <-s.StopChan():
 			return fmt.Errorf("source stopped during retry")
 		case <-ctx.Done():
 			return ctx.Err()
@@ -151,12 +138,12 @@ func (s *FixerSource) retryFetch(ctx context.Context) error {
 
 		err := s.fetchPrices(ctx)
 		if err == nil {
-			s.setHealthy(true)
+			s.SetHealthy(true)
 			return nil
 		}
 
 		lastErr = err
-		s.logger.Warn("Fetch attempt failed",
+		s.Logger().Warn("Fetch attempt failed",
 			"attempt", attempt,
 			"max_retries", maxRetries,
 			"error", err,
@@ -171,42 +158,42 @@ func (s *FixerSource) retryFetch(ctx context.Context) error {
 			backoff = maxBackoff
 		}
 
-		s.logger.Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
+		s.Logger().Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
 
 		select {
 		case <-time.After(backoff):
-		case <-s.stopChan:
+		case <-s.StopChan():
 			return fmt.Errorf("source stopped during backoff")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 
-	s.setHealthy(false)
-	s.logger.Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
+	s.SetHealthy(false)
+	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
 	return lastErr
 }
 
 func (s *FixerSource) fetchPrices(ctx context.Context) error {
-	// Convert symbols to API format
-	// Fixer base is EUR by default (free tier), so we need to fetch USD too
-	apiSymbols := make([]string, 0, len(s.symbols)+1)
-	apiSymbols = append(apiSymbols, "USD") // Always fetch USD for conversion
-
-	for _, symbol := range s.symbols {
+	symbols := s.Symbols()
+	currencies := make([]string, 0, len(symbols))
+	for _, symbol := range symbols {
 		if symbol == "SDR/USD" {
-			apiSymbols = append(apiSymbols, "XDR")
+			currencies = append(currencies, "XDR")
 		} else {
-			// Remove /USD suffix
-			apiSymbols = append(apiSymbols, strings.Replace(symbol, "/USD", "", 1))
+			parts := strings.Split(symbol, "/")
+			if len(parts) == 2 && parts[1] == "USD" {
+				currencies = append(currencies, parts[0])
+			}
 		}
 	}
 
-	// Build request URL
-	url := fmt.Sprintf("https://data.fixer.io/api/latest?access_key=%s&symbols=%s",
-		s.apiKey,
-		strings.Join(apiSymbols, ","),
-	)
+	if len(currencies) == 0 {
+		return fmt.Errorf("no valid currencies to fetch")
+	}
+
+	url := fmt.Sprintf("https://api.fixer.io/latest?access_key=%s&base=USD&symbols=%s",
+		s.apiKey, strings.Join(currencies, ","))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -220,8 +207,8 @@ func (s *FixerSource) fetchPrices(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		s.logger.Warn("Rate limit exceeded", "source", s.name)
-		s.setHealthy(false)
+		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
+		s.SetHealthy(false)
 		return fmt.Errorf("rate limit exceeded (HTTP 429)")
 	}
 
@@ -234,137 +221,41 @@ func (s *FixerSource) fetchPrices(ctx context.Context) error {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if !data.Success || data.Rates == nil {
-		return fmt.Errorf("invalid response: success=%v, error=%v", data.Success, data.Error)
+	if !data.Success {
+		return fmt.Errorf("API error: %v", data.Error)
 	}
 
-	// Get USD rate (base is EUR, so we get EUR/USD)
-	usdRate, ok := data.Rates["USD"]
-	if !ok {
-		return fmt.Errorf("USD rate not found in response")
-	}
-
-	// Convert all rates to USD base
-	// Fixer gives EUR/XXX, we need XXX/USD
-	// Formula: XXX/USD = (EUR/XXX) * (USD/EUR) = (EUR/XXX) / (EUR/USD)
 	now := time.Now()
-	newPrices := make(map[string]sources.Price)
-
-	for symbol, rate := range data.Rates {
-		if symbol == "USD" {
-			continue // Skip USD itself
-		}
-
-		// Convert back to our format
-		var targetSymbol string
-		if symbol == "XDR" {
-			targetSymbol = "SDR/USD"
+	for currency, rate := range data.Rates {
+		var symbol string
+		if currency == "XDR" {
+			symbol = "SDR/USD"
 		} else {
-			targetSymbol = symbol + "/USD"
+			symbol = currency + "/USD"
 		}
 
-		// Convert from EUR base to USD base, then invert
-		// rate is EUR/XXX, usdRate is EUR/USD
-		// XXX/USD = 1 / ((EUR/XXX) / (EUR/USD)) = (EUR/USD) / (EUR/XXX)
-		priceInUSD := usdRate / rate
-		// But we want XXX/USD (how many USD per 1 XXX), so invert
-		price := 1.0 / priceInUSD
-
-		newPrices[targetSymbol] = sources.Price{
-			Symbol:    targetSymbol,
-			Price:     decimal.NewFromFloat(price),
-			Volume:    decimal.Zero,
-			Timestamp: now,
-			Source:    s.name,
-		}
+		price := 1.0 / rate
+		s.SetPrice(symbol, decimal.NewFromFloat(price), now)
 	}
 
-	// Update stored prices
-	s.pricesMu.Lock()
-	for symbol, price := range newPrices {
-		s.prices[symbol] = price
-	}
-	s.lastUpdate = now
-	s.pricesMu.Unlock()
-
-	// Notify subscribers
-	s.notifySubscribers(newPrices, nil)
-
-	s.logger.Debug("Updated prices from Fixer", "count", len(newPrices))
-
+	s.Logger().Debug("Updated prices from Fixer", "count", len(data.Rates))
 	return nil
-}
-
-func (s *FixerSource) Stop() error {
-	s.logger.Info("Stopping Fixer source")
-	close(s.stopChan)
-	return nil
-}
-
-func (s *FixerSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-
-	result := make(map[string]sources.Price, len(s.prices))
-	for k, v := range s.prices {
-		result[k] = v
-	}
-
-	return result, nil
-}
-
-func (s *FixerSource) Subscribe(updates chan<- sources.PriceUpdate) error {
-	s.subscribersMu.Lock()
-	defer s.subscribersMu.Unlock()
-	s.subscribers = append(s.subscribers, updates)
-	return nil
-}
-
-func (s *FixerSource) Name() string {
-	return s.name
 }
 
 func (s *FixerSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *FixerSource) Symbols() []string {
-	return s.symbols
+func (s *FixerSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+	return s.GetAllPrices(), nil
 }
 
-func (s *FixerSource) IsHealthy() bool {
-	s.healthMu.RLock()
-	defer s.healthMu.RUnlock()
-	return s.healthy
+func (s *FixerSource) Subscribe(updates chan<- sources.PriceUpdate) error {
+	s.AddSubscriber(updates)
+	return nil
 }
 
-func (s *FixerSource) LastUpdate() time.Time {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-	return s.lastUpdate
-}
-
-func (s *FixerSource) setHealthy(healthy bool) {
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
-	s.healthy = healthy
-}
-
-func (s *FixerSource) notifySubscribers(prices map[string]sources.Price, err error) {
-	s.subscribersMu.RLock()
-	defer s.subscribersMu.RUnlock()
-
-	update := sources.PriceUpdate{
-		Source: s.name,
-		Prices: prices,
-		Error:  err,
-	}
-
-	for _, sub := range s.subscribers {
-		select {
-		case sub <- update:
-		default:
-			s.logger.Warn("Subscriber channel full, skipping update")
-		}
-	}
+func (s *FixerSource) Stop() error {
+	s.Close()
+	return nil
 }

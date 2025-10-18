@@ -93,6 +93,12 @@ feeder:
   # Can be overridden with --dry-run flag
   dry_run: false
 
+  # Verify mode: compare submitted votes against on-chain exchange rates (requires dry_run: true)
+  # This will fetch the aggregated exchange rates from the chain at the end of each voting period
+  # and compare them with the prices submitted in the vote, logging any deviations > 1%
+  # Can be overridden with --verify flag (requires --dry-run)
+  verify: false
+
 # Price Sources Configuration
 sources:
   # CoinGecko (REST API) - Comprehensive coverage, fallback provider
@@ -774,6 +780,25 @@ sources:
       timeout: 5000       # 5 seconds
       interval: 30000     # 30 seconds
   
+  # ExchangeRate-API free tier (no API key required)
+  # Provides 1500 requests/month for free at open.er-api.com
+  # Supports 167 currencies including MNT, TWD, and SDR (as XDR)
+  # Updates once per day - source automatically schedules updates based on API's next_update_time
+  - type: fiat
+    name: exchangerate_free
+    enabled: true
+    weight: 1.0
+    config:
+      symbols: [
+        "SDR/USD", "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD",
+        "CNY/USD", "MNT/USD", "CAD/USD", "CHF/USD", "HKD/USD",
+        "AUD/USD", "SGD/USD", "THB/USD", "SEK/USD", "DKK/USD",
+        "IDR/USD", "PHP/USD", "MYR/USD", "NOK/USD", "TWD/USD",
+        "INR/USD"
+      ]
+      timeout: 5000       # 5 seconds
+      interval: 3600000   # 60 minutes minimum (fallback if API doesn't provide next_update_time)
+  
   # ExchangeRate.host (requires API key)
   - type: fiat
     name: exchangerate_api
@@ -860,12 +885,19 @@ sources:
       interval: 60000
   
   # Band Protocol oracle (free, no API key)
+  # Supports: Cryptos (BTC, ETH, etc.) and major fiat currencies
+  # Note: DKK, NOK, IDR, MNT not available with required validator counts (4/3)
   - type: oracle
     name: band
     enabled: true
     weight: 1.0
     config:
-      symbols: ["BTC/USD", "ETH/USD", "EUR/USD", "GBP/USD", "JPY/USD"]
+      symbols: [
+        "BTC/USD", "ETH/USD",
+        "EUR/USD", "GBP/USD", "JPY/USD", "KRW/USD", "CNY/USD",
+        "CAD/USD", "CHF/USD", "HKD/USD", "AUD/USD", "SGD/USD",
+        "THB/USD", "SEK/USD", "PHP/USD", "MYR/USD", "TWD/USD", "INR/USD"
+      ]
       timeout: 10000
       interval: 60000    # 1 minute
   

@@ -47,6 +47,7 @@ var (
 	serverOnly = flag.Bool("server", false, "Run price server only")
 	feederOnly = flag.Bool("feeder", false, "Run feeder only")
 	dryRun     = flag.Bool("dry-run", false, "Dry run mode: create votes but don't submit them (for testing)")
+	verify     = flag.Bool("verify", false, "Verify votes against on-chain rates (requires --dry-run)")
 )
 
 func main() {
@@ -86,6 +87,15 @@ func main() {
 		cfg.Feeder.DryRun = true
 	}
 
+	// Override verify setting from command line
+	if *verify {
+		if !*dryRun && !cfg.Feeder.DryRun {
+			fmt.Fprintf(os.Stderr, "Error: --verify requires --dry-run to be enabled\n")
+			os.Exit(1)
+		}
+		cfg.Feeder.Verify = true
+	}
+
 	// Validate configuration
 	if err := config.Validate(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
@@ -102,9 +112,17 @@ func main() {
 
 	logger.Info("Starting oracle-go", "version", version, "mode", cfg.Mode)
 
-	// Log dry-run mode if enabled
+	// Log dry-run and verify mode if enabled
 	if cfg.Feeder.DryRun {
 		logger.Warn("DRY RUN MODE ENABLED - Votes will be created but NOT submitted to the blockchain")
+	}
+
+	if cfg.Feeder.Verify {
+		if !cfg.Feeder.DryRun {
+			logger.Error("VERIFICATION requires DRY-RUN mode - this should have been caught earlier")
+		} else {
+			logger.Info("VERIFICATION ENABLED - Votes will be compared against on-chain exchange rates")
+		}
 	}
 
 	// Initialize metrics
@@ -193,7 +211,7 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 			} else {
 				// Set the global gRPC client for CosmWasm sources
 				cosmwasm.SetGRPCClient(grpcClient)
-				
+
 				// Log endpoint addresses
 				var addrs []string
 				for _, e := range endpoints {
@@ -216,6 +234,12 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 
 		logger.Info("Initializing source", "type", sourceCfg.Type, "name", sourceCfg.Name, "weight", sourceCfg.Weight)
 
+		// Add logger to config so sources don't create their own
+		if sourceCfg.Config == nil {
+			sourceCfg.Config = make(map[string]interface{})
+		}
+		sourceCfg.Config["logger"] = logger
+
 		source, err := sources.Create(sourceCfg.Type, sourceCfg.Name, sourceCfg.Config)
 		if err != nil {
 			logger.Warn("Failed to create source", "type", sourceCfg.Type, "name", sourceCfg.Name, "error", err)
@@ -233,14 +257,14 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		}
 
 		allSources = append(allSources, source)
-		
+
 		// Store weight (default to 1.0 if not specified)
 		weight := sourceCfg.Weight
 		if weight == 0 {
 			weight = 1.0
 		}
 		sourceWeights[source.Name()] = weight
-		
+
 		logger.Info("Source started", "source", source.Name(), "symbols", source.Symbols(), "weight", weight)
 	}
 
@@ -398,7 +422,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	feeDenom := "uluna" // Default denom
 	if cfg.Feeder.FeeAmount != "" {
 		logger.Info("Parsing fee configuration", "fee_amount", cfg.Feeder.FeeAmount, "gas_price", cfg.Feeder.GasPrice)
-		
+
 		feeCoins, err := sdk.ParseCoinsNormalized(cfg.Feeder.FeeAmount)
 		if err != nil {
 			return fmt.Errorf("invalid fee amount '%s': %w", cfg.Feeder.FeeAmount, err)
@@ -421,6 +445,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		GasPrice:      cfg.Feeder.GasPrice,
 		FeeDenom:      feeDenom,
 		DryRun:        cfg.Feeder.DryRun,
+		Verify:        cfg.Feeder.Verify,
 	}
 
 	v, err := voter.NewVoter(voterCfg, grpcClient, broadcaster, eventStream, logger.ZerologLogger())
@@ -438,21 +463,21 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 func makeEncodingConfig() EncodingConfig {
 	amino := codec.NewLegacyAmino()
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	
+
 	// Register all standard SDK modules
 	std.RegisterLegacyAminoCodec(amino)
 	std.RegisterInterfaces(interfaceRegistry)
-	
+
 	// Register auth module types (required for account queries)
 	authtypes.RegisterLegacyAminoCodec(amino)
 	authtypes.RegisterInterfaces(interfaceRegistry)
-	
+
 	// Register vesting types (Terra Classic uses vesting accounts)
 	vestingtypes.RegisterInterfaces(interfaceRegistry)
-	
+
 	// Register bank types
 	banktypes.RegisterInterfaces(interfaceRegistry)
-	
+
 	// Register concrete account types explicitly
 	interfaceRegistry.RegisterImplementations(
 		(*authtypes.AccountI)(nil),

@@ -58,6 +58,7 @@ type FeederConfig struct {
 	PriceSource   PriceSourceConfig `yaml:"price_source"`   // Where to fetch prices
 	VotePeriod    uint64            `yaml:"vote_period"`    // Vote period in blocks (default: 30)
 	DryRun        bool              `yaml:"dry_run"`        // Dry run mode: create votes but don't submit (for testing)
+	Verify        bool              `yaml:"verify"`         // Verify votes against on-chain rates (requires DryRun)
 }
 
 // GRPCEndpoint represents a gRPC endpoint configuration

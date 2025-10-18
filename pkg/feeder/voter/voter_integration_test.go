@@ -459,9 +459,10 @@ func TestRealRPCConnection(t *testing.T) {
 	ir := codectypes.NewInterfaceRegistry()
 
 	clientCfg := client.ClientConfig{
-		Endpoints:         []string{grpcEndpoint},
+		Endpoints: []client.EndpointConfig{
+			{Address: grpcEndpoint, TLS: true},
+		},
 		ChainID:           "columbus-5",
-		EnableTLS:         true,
 		InterfaceRegistry: ir,
 		Logger:            logger,
 	}
@@ -582,9 +583,10 @@ func TestEndToEndVotingSimulation(t *testing.T) {
 	ir := codectypes.NewInterfaceRegistry()
 
 	clientCfg := client.ClientConfig{
-		Endpoints:         []string{grpcEndpoint},
+		Endpoints: []client.EndpointConfig{
+			{Address: grpcEndpoint, TLS: true},
+		},
 		ChainID:           "columbus-5",
-		EnableTLS:         true,
 		InterfaceRegistry: ir,
 		Logger:            logger,
 	}

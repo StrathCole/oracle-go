@@ -378,7 +378,7 @@ func TestRealCosmWasmSources(t *testing.T) {
 
 	// Note: This test would require gRPC client setup
 	// For now, skip if gRPC endpoints not configured
-	if len(cfg.Feeder.GRPCEndpoints) == 0 && cfg.Feeder.GRPCEndpoint == "" {
+	if len(cfg.Feeder.GRPCEndpoints) == 0 {
 		t.Skip("No gRPC endpoints configured for CosmWasm testing")
 	}
 

@@ -29,9 +29,9 @@ func TestRealTerraportDEX(t *testing.T) {
 	// Note: Can't seal in test (may already be sealed)
 
 	// Terra Classic mainnet gRPC endpoints
-	grpcEndpoints := []string{
-		"grpc.terra-classic.hexxagon.io:443",
-		"terra-classic-grpc.publicnode.com:443",
+	grpcEndpoints := []client.EndpointConfig{
+		{Address: "grpc.terra-classic.hexxagon.io:443", TLS: true},
+		{Address: "terra-classic-grpc.publicnode.com:443", TLS: true},
 	}
 
 	// Create gRPC client with correct ClientConfig
@@ -39,7 +39,6 @@ func TestRealTerraportDEX(t *testing.T) {
 	grpcClient, err := client.NewClient(client.ClientConfig{
 		Endpoints:         grpcEndpoints,
 		ChainID:           "columbus-5",
-		EnableTLS:         true,
 		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
 		Logger:            logger,
 	})
@@ -134,16 +133,15 @@ func TestRealTerraswapDEX(t *testing.T) {
 	sdkConfig.SetCoinType(330)
 	sdkConfig.SetPurpose(44)
 
-	grpcEndpoints := []string{
-		"grpc.terra-classic.hexxagon.io:443",
-		"terra-classic-grpc.publicnode.com:443",
+	grpcEndpoints := []client.EndpointConfig{
+		{Address: "grpc.terra-classic.hexxagon.io:443", TLS: true},
+		{Address: "terra-classic-grpc.publicnode.com:443", TLS: true},
 	}
 
 	logger := zerolog.Nop()
 	grpcClient, err := client.NewClient(client.ClientConfig{
 		Endpoints:         grpcEndpoints,
 		ChainID:           "columbus-5",
-		EnableTLS:         true,
 		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
 		Logger:            logger,
 	})
@@ -236,16 +234,15 @@ func TestRealGarudaDEX(t *testing.T) {
 	sdkConfig.SetCoinType(330)
 	sdkConfig.SetPurpose(44)
 
-	grpcEndpoints := []string{
-		"grpc.terra-classic.hexxagon.io:443",
-		"terra-classic-grpc.publicnode.com:443",
+	grpcEndpoints := []client.EndpointConfig{
+		{Address: "grpc.terra-classic.hexxagon.io:443", TLS: true},
+		{Address: "terra-classic-grpc.publicnode.com:443", TLS: true},
 	}
 
 	logger := zerolog.Nop()
 	grpcClient, err := client.NewClient(client.ClientConfig{
 		Endpoints:         grpcEndpoints,
 		ChainID:           "columbus-5",
-		EnableTLS:         true,
 		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
 		Logger:            logger,
 	})
@@ -338,16 +335,15 @@ func TestAllCosmWasmDEXs(t *testing.T) {
 	sdkConfig.SetCoinType(330)
 	sdkConfig.SetPurpose(44)
 
-	grpcEndpoints := []string{
-		"grpc.terra-classic.hexxagon.io:443",
-		"terra-classic-grpc.publicnode.com:443",
+	grpcEndpoints := []client.EndpointConfig{
+		{Address: "grpc.terra-classic.hexxagon.io:443", TLS: true},
+		{Address: "terra-classic-grpc.publicnode.com:443", TLS: true},
 	}
 
 	logger := zerolog.Nop()
 	grpcClient, err := client.NewClient(client.ClientConfig{
 		Endpoints:         grpcEndpoints,
 		ChainID:           "columbus-5",
-		EnableTLS:         true,
 		InterfaceRegistry: codectypes.NewInterfaceRegistry(),
 		Logger:            logger,
 	})
