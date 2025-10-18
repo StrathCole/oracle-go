@@ -1,6 +1,9 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Config is the root configuration structure
 type Config struct {
@@ -42,19 +45,67 @@ type TLSConfig struct {
 // FeederConfig configures the feeder component
 type FeederConfig struct {
 	ChainID       string            `yaml:"chain_id"`       // Chain ID (e.g., "columbus-5")
-	GRPCEndpoint  string            `yaml:"grpc_endpoint"`  // Primary gRPC endpoint
-	GRPCEndpoints []string          `yaml:"grpc_endpoints"` // Multiple gRPC endpoints for failover
-	EnableTLS     bool              `yaml:"enable_tls"`     // Enable TLS for gRPC
+	GRPCEndpoints []GRPCEndpoint    `yaml:"grpc_endpoints"` // Multiple gRPC endpoints for failover
+	RPCEndpoints  []RPCEndpoint     `yaml:"rpc_endpoints"`  // Multiple Tendermint RPC endpoints for WebSocket failover
 	Validators    []string          `yaml:"validators"`     // Validator addresses to vote for
 	Mnemonic      string            `yaml:"mnemonic"`       // BIP39 mnemonic (or use MnemonicEnv)
 	MnemonicEnv   string            `yaml:"mnemonic_env"`   // Environment variable for mnemonic
 	HDPath        string            `yaml:"hd_path"`        // HD derivation path (default: "m/44'/330'/0'/0/0" for Terra Classic)
 	CoinType      uint32            `yaml:"coin_type"`      // BIP44 coin type (default: 330 for Terra Classic, 118 for Cosmos)
-	FeeAmount     string            `yaml:"fee_amount"`     // Fee amount (e.g., "100000uluna")
+	FeeAmount     string            `yaml:"fee_amount"`     // Fee amount (e.g., "100000uluna" or "" for zero fees)
 	GasLimit      uint64            `yaml:"gas_limit"`      // Gas limit (0 = auto estimate)
 	GasPrice      string            `yaml:"gas_price"`      // Gas price for fee calculation
 	PriceSource   PriceSourceConfig `yaml:"price_source"`   // Where to fetch prices
 	VotePeriod    uint64            `yaml:"vote_period"`    // Vote period in blocks (default: 30)
+	DryRun        bool              `yaml:"dry_run"`        // Dry run mode: create votes but don't submit (for testing)
+}
+
+// GRPCEndpoint represents a gRPC endpoint configuration
+type GRPCEndpoint struct {
+	Host string `yaml:"host"` // Hostname (e.g., "grpc.terra-classic.hexxagon.io")
+	Port uint16 `yaml:"port"` // Port (default: 9090, or 443 for TLS)
+	TLS  bool   `yaml:"tls"`  // Use TLS
+}
+
+// ToAddress converts GRPCEndpoint to address string
+func (g GRPCEndpoint) ToAddress() string {
+	port := g.Port
+	if port == 0 {
+		if g.TLS {
+			port = 443 // Default TLS port
+		} else {
+			port = 9090 // Default gRPC port
+		}
+	}
+
+	return fmt.Sprintf("%s:%d", g.Host, port)
+}
+
+// RPCEndpoint represents a Tendermint RPC endpoint configuration
+type RPCEndpoint struct {
+	Host string `yaml:"host"` // Hostname (e.g., "rpc.hexxagon.io")
+	Port uint16 `yaml:"port"` // Port (default: 26657)
+	TLS  bool   `yaml:"tls"`  // Use TLS (wss:// vs ws://)
+}
+
+// ToURL converts RPCEndpoint to WebSocket URL
+func (r RPCEndpoint) ToURL() string {
+	protocol := "ws"
+	if r.TLS {
+		protocol = "wss"
+	}
+
+	port := r.Port
+	if port == 0 {
+		port = 26657 // Default Tendermint port
+	}
+
+	// For standard ports (443 for wss, 80 for ws), omit port from URL
+	if (r.TLS && port == 443) || (!r.TLS && port == 80) {
+		return fmt.Sprintf("%s://%s/websocket", protocol, r.Host)
+	}
+
+	return fmt.Sprintf("%s://%s:%d/websocket", protocol, r.Host, port)
 }
 
 // PriceSourceConfig configures where feeder fetches prices
@@ -66,11 +117,11 @@ type PriceSourceConfig struct {
 
 // SourceConfig configures a price source
 type SourceConfig struct {
-	Type     string                 `yaml:"type"`
-	Name     string                 `yaml:"name"`
-	Enabled  bool                   `yaml:"enabled"`
-	Priority int                    `yaml:"priority"`
-	Config   map[string]interface{} `yaml:"config"`
+	Type    string                 `yaml:"type"`
+	Name    string                 `yaml:"name"`
+	Enabled bool                   `yaml:"enabled"`
+	Weight  float64                `yaml:"weight"` // Weight for aggregation (default: 1.0, CosmWasm sources: 0.5)
+	Config  map[string]interface{} `yaml:"config"`
 }
 
 // MetricsConfig configures Prometheus metrics

@@ -10,7 +10,8 @@ import (
 // Aggregator defines the interface for price aggregation strategies
 type Aggregator interface {
 	// Aggregate computes aggregated prices from multiple sources
-	Aggregate(sourcePrices map[string]map[string]sources.Price) (map[string]sources.Price, error)
+	// sourceWeights maps source names to their weights (1.0 = standard, 0.5 = half weight)
+	Aggregate(sourcePrices map[string]map[string]sources.Price, sourceWeights map[string]float64) (map[string]sources.Price, error)
 }
 
 // NewAggregator creates an aggregator based on the specified mode

@@ -13,6 +13,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"tc.com/oracle-prices/pkg/logging"
+	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
@@ -221,6 +222,9 @@ func (s *IMFSource) fetchSDRPrice(ctx context.Context) error {
 	s.lastUpdate = now
 	s.pricesMu.Unlock()
 
+	// Record metric
+	metrics.RecordSourceUpdate(s.name, "SDR/USD")
+
 	// Notify subscribers
 	prices := map[string]sources.Price{"SDR/USD": price}
 	s.notifySubscribers(prices, nil)
@@ -246,27 +250,31 @@ func (s *IMFSource) parseSDRRate(html string) (float64, error) {
 					// Next cell should contain the rate
 					if i+1 < len(cells) {
 						rateText := strings.TrimSpace(stripHTML(cells[i+1][1]))
+						var rate float64
+						var err error
+						
 						// Try parsing as single number first (most common format)
-						rate, err := strconv.ParseFloat(rateText, 64)
+						rate, err = strconv.ParseFloat(rateText, 64)
 						if err == nil && rate > 0 {
-							s.logger.Info("Calculated SDR rate", "rate", fmt.Sprintf("%.7f", rate))
+							s.logger.Info("Parsed SDR rate from IMF", "rate", fmt.Sprintf("%.7f", rate))
 							return rate, nil
 						}
+						
 						// Rate format might be "1.32149 2" - try to take the first or second number
 						parts := strings.Fields(rateText)
 						if len(parts) >= 1 {
 							// Try first number
-							rate, err := strconv.ParseFloat(parts[0], 64)
+							rate, err = strconv.ParseFloat(parts[0], 64)
 							if err == nil && rate > 0 {
-								s.logger.Info("Calculated SDR rate", "rate", fmt.Sprintf("%.7f", rate))
+								s.logger.Info("Parsed SDR rate from IMF (multi-field, first)", "rate", fmt.Sprintf("%.7f", rate))
 								return rate, nil
 							}
 						}
 						if len(parts) >= 2 {
 							// Try second number
-							rate, err := strconv.ParseFloat(parts[1], 64)
+							rate, err = strconv.ParseFloat(parts[1], 64)
 							if err == nil && rate > 0 {
-								s.logger.Info("Calculated SDR rate", "rate", fmt.Sprintf("%.7f", rate))
+								s.logger.Info("Parsed SDR rate from IMF (multi-field, second)", "rate", fmt.Sprintf("%.7f", rate))
 								return rate, nil
 							}
 						}

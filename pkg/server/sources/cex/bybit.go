@@ -17,7 +17,7 @@ import (
 
 const (
 	bybitAPIURL   = "https://api.bybit.com/v5/market/tickers"
-	bybitPollRate = 60 * time.Second
+	bybitPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
 // BybitSource fetches prices from Bybit REST API

@@ -18,7 +18,7 @@ import (
 
 const (
 	coinmarketcapAPIURL   = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest"
-	coinmarketcapPollRate = 300 * time.Second // 5 minutes (API rate limits)
+	coinmarketcapPollRate = 15 * time.Second // 15 seconds (API rate limits)
 )
 
 // CoinMarketCapSource fetches prices from CoinMarketCap REST API

@@ -77,13 +77,24 @@ func validateFeederConfig(cfg *FeederConfig) error {
 		return fmt.Errorf("chain_id must be specified")
 	}
 
-	// Validate gRPC endpoints (support both single endpoint and multiple for failover)
-	endpoints := cfg.GRPCEndpoints
-	if len(endpoints) == 0 && cfg.GRPCEndpoint != "" {
-		endpoints = []string{cfg.GRPCEndpoint}
-	}
-	if len(endpoints) == 0 {
+	// Validate gRPC endpoints
+	if len(cfg.GRPCEndpoints) == 0 {
 		return fmt.Errorf("at least one grpc_endpoint must be specified")
+	}
+	for i, ep := range cfg.GRPCEndpoints {
+		if ep.Host == "" {
+			return fmt.Errorf("grpc_endpoints[%d]: host must be specified", i)
+		}
+	}
+
+	// Validate RPC endpoints (required - no fallback to gRPC)
+	if len(cfg.RPCEndpoints) == 0 {
+		return fmt.Errorf("at least one rpc_endpoint must be specified")
+	}
+	for i, ep := range cfg.RPCEndpoints {
+		if ep.Host == "" {
+			return fmt.Errorf("rpc_endpoints[%d]: host must be specified", i)
+		}
 	}
 
 	// Validate validators
@@ -93,6 +104,14 @@ func validateFeederConfig(cfg *FeederConfig) error {
 	for i, val := range cfg.Validators {
 		if !strings.HasPrefix(val, "terravaloper") && !strings.HasPrefix(val, "cosmosvaloper") {
 			return fmt.Errorf("validator[%d] must start with terravaloper or cosmosvaloper", i)
+		}
+		// Check for placeholder values
+		if strings.Contains(val, "xxx") || strings.Contains(val, "...") {
+			return fmt.Errorf("validator[%d] is a placeholder value '%s' - please replace with actual validator address", i, val)
+		}
+		// Validate minimum length (bech32 addresses are at least 39 characters)
+		if len(val) < 39 {
+			return fmt.Errorf("validator[%d] '%s' is too short - must be a valid bech32 address", i, val)
 		}
 	}
 
@@ -147,9 +166,9 @@ func validateSourceConfig(cfg *SourceConfig) error {
 		return fmt.Errorf("name must be specified")
 	}
 
-	// Priority should be positive
-	if cfg.Priority < 0 {
-		return fmt.Errorf("priority must be >= 0")
+	// Weight should be positive (0 defaults to 1.0 at runtime)
+	if cfg.Weight < 0 {
+		return fmt.Errorf("weight must be >= 0")
 	}
 
 	return nil

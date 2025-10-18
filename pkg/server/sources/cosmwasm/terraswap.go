@@ -14,7 +14,7 @@ import (
 
 const (
 	terraswapQueryTimeout   = 10 * time.Second
-	terraswapUpdateInterval = 30 * time.Second
+	terraswapUpdateInterval = 15 * time.Second
 )
 
 // TerraswapSource fetches prices from Terraswap DEX pairs via gRPC smart contract queries

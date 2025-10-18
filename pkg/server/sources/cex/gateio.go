@@ -17,7 +17,7 @@ import (
 
 const (
 	gateioAPIURL   = "https://api.gateio.ws/api/v4/spot/tickers"
-	gateioPollRate = 60 * time.Second
+	gateioPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
 // GateioSource fetches prices from Gate.io REST API

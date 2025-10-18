@@ -48,7 +48,8 @@ func NewTVWAPAggregator(logger *logging.Logger) *TVWAPAggregator {
 }
 
 // Aggregate implements the Aggregator interface using TVWAP
-func (a *TVWAPAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price) (map[string]sources.Price, error) {
+// Note: weights are not used in TVWAP as it relies on volume and time weighting
+func (a *TVWAPAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price, sourceWeights map[string]float64) (map[string]sources.Price, error) {
 	start := time.Now()
 	defer func() {
 		metrics.RecordAggregation("tvwap", time.Since(start))

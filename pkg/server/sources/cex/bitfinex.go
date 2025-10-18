@@ -17,7 +17,7 @@ import (
 
 const (
 	bitfinexAPIURL   = "https://api-pub.bitfinex.com/v2/tickers"
-	bitfinexPollRate = 60 * time.Second
+	bitfinexPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
 // BitfinexSource fetches prices from Bitfinex REST API

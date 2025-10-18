@@ -10,6 +10,12 @@ import (
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
+// priceWithWeight tracks price and its source weight
+type priceWithWeight struct {
+	price  sources.Price
+	weight float64
+}
+
 // AverageAggregator aggregates prices using simple arithmetic mean
 type AverageAggregator struct {
 	logger *logging.Logger
@@ -25,8 +31,8 @@ func NewAverageAggregator(logger *logging.Logger) *AverageAggregator {
 	}
 }
 
-// Aggregate computes average prices from multiple sources
-func (a *AverageAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price) (map[string]sources.Price, error) {
+// Aggregate computes weighted average prices from multiple sources
+func (a *AverageAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price, sourceWeights map[string]float64) (map[string]sources.Price, error) {
 	start := time.Now()
 	defer func() {
 		metrics.RecordAggregation("average", time.Since(start))
@@ -36,24 +42,34 @@ func (a *AverageAggregator) Aggregate(sourcePrices map[string]map[string]sources
 		return nil, fmt.Errorf("no source prices provided")
 	}
 
-	// Collect all prices by NORMALIZED symbol to handle USDT/USD/USDC aliases
-	pricesBySymbol := make(map[string][]sources.Price)
-	for _, prices := range sourcePrices {
+	// Collect all prices by NORMALIZED symbol with weights
+	pricesBySymbol := make(map[string][]priceWithWeight)
+	
+	for sourceName, prices := range sourcePrices {
+		// Get weight for this source (default to 1.0 if not specified)
+		weight := 1.0
+		if w, ok := sourceWeights[sourceName]; ok {
+			weight = w
+		}
+		
 		for originalSymbol, price := range prices {
 			// Normalize the symbol (e.g., LUNC/USDT -> LUNC/USD)
 			normalizedSymbol := sources.NormalizeSymbol(originalSymbol)
-			pricesBySymbol[normalizedSymbol] = append(pricesBySymbol[normalizedSymbol], price)
+			pricesBySymbol[normalizedSymbol] = append(pricesBySymbol[normalizedSymbol], priceWithWeight{
+				price:  price,
+				weight: weight,
+			})
 		}
 	}
 
-	// Compute average for each symbol
+	// Compute weighted average for each symbol
 	result := make(map[string]sources.Price)
 	for symbol, prices := range pricesBySymbol {
 		if len(prices) == 0 {
 			continue
 		}
 
-		avg := a.computeAverage(prices)
+		avg := a.computeWeightedAverage(prices)
 		result[symbol] = sources.Price{
 			Symbol:    symbol, // Use normalized symbol
 			Price:     avg,
@@ -66,21 +82,28 @@ func (a *AverageAggregator) Aggregate(sourcePrices map[string]map[string]sources
 		return nil, fmt.Errorf("no average prices computed")
 	}
 
-	a.logger.Debug("Aggregated prices using average", "symbols", len(result))
+	a.logger.Debug("Aggregated prices using weighted average", "symbols", len(result))
 	return result, nil
 }
 
-// computeAverage calculates the arithmetic mean of prices
-func (a *AverageAggregator) computeAverage(prices []sources.Price) decimal.Decimal {
+// computeWeightedAverage calculates the weighted arithmetic mean of prices
+func (a *AverageAggregator) computeWeightedAverage(prices []priceWithWeight) decimal.Decimal {
 	if len(prices) == 0 {
 		return decimal.Zero
 	}
 
-	sum := decimal.Zero
-	for _, price := range prices {
-		sum = sum.Add(price.Price)
+	weightedSum := decimal.Zero
+	totalWeight := 0.0
+	
+	for _, p := range prices {
+		weightedSum = weightedSum.Add(p.price.Price.Mul(decimal.NewFromFloat(p.weight)))
+		totalWeight += p.weight
 	}
 
-	count := decimal.NewFromInt(int64(len(prices)))
-	return sum.Div(count)
+	if totalWeight == 0 {
+		return decimal.Zero
+	}
+
+	return weightedSum.Div(decimal.NewFromFloat(totalWeight))
 }
+

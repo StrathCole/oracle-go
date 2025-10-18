@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -17,20 +16,11 @@ import (
 // FrankfurterSource fetches fiat prices from Frankfurter API (free, no API key)
 // https://www.frankfurter.app/docs/
 type FrankfurterSource struct {
-	name          string
-	symbols       []string
-	timeout       time.Duration
-	interval      time.Duration
-	client        *http.Client
-	prices        map[string]sources.Price
-	pricesMu      sync.RWMutex
-	lastUpdate    time.Time
-	healthy       bool
-	healthMu      sync.RWMutex
-	subscribers   []chan<- sources.PriceUpdate
-	subscribersMu sync.RWMutex
-	stopChan      chan struct{}
-	logger        *logging.Logger
+	*sources.BaseSource
+	
+	timeout  time.Duration
+	interval time.Duration
+	client   *http.Client
 }
 
 type frankfurterResponse struct {
@@ -65,7 +55,7 @@ func NewFrankfurterSource(config map[string]interface{}) (sources.Source, error)
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
-	interval := 30 * time.Second
+	interval := 15 * time.Second // Update every 15s (vote period is 30s)
 	if i, ok := config["interval"].(int); ok {
 		interval = time.Duration(i) * time.Millisecond
 	}
@@ -246,6 +236,8 @@ func (s *FrankfurterSource) fetchPrices(ctx context.Context) error {
 	s.pricesMu.Lock()
 	for symbol, price := range newPrices {
 		s.prices[symbol] = price
+		// Record metric for this price update
+		metrics.RecordSourceUpdate(s.name, symbol)
 	}
 	s.lastUpdate = now
 	s.pricesMu.Unlock()

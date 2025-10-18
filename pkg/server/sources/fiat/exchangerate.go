@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -18,21 +17,12 @@ import (
 // https://exchangerate.host/#/#our-services
 // Requires API key (paid service)
 type ExchangeRateSource struct {
-	name          string
-	symbols       []string
-	apiKey        string
-	timeout       time.Duration
-	interval      time.Duration
-	client        *http.Client
-	prices        map[string]sources.Price
-	pricesMu      sync.RWMutex
-	lastUpdate    time.Time
-	healthy       bool
-	healthMu      sync.RWMutex
-	subscribers   []chan<- sources.PriceUpdate
-	subscribersMu sync.RWMutex
-	stopChan      chan struct{}
-	logger        *logging.Logger
+	*sources.BaseSource
+	
+	apiKey   string
+	timeout  time.Duration
+	interval time.Duration
+	client   *http.Client
 }
 
 type exchangeRateResponse struct {
@@ -41,92 +31,60 @@ type exchangeRateResponse struct {
 	Error   interface{}        `json:"error,omitempty"`
 }
 
-func NewExchangeRateSource(config map[string]interface{}) (sources.Source, error) {
-	symbols, ok := config["symbols"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("symbols must be an array")
+func NewExchangeRateSource(logger *logging.Logger, symbols []string, apiKey string, timeout, interval time.Duration) *ExchangeRateSource {
+	symbolStrs := make([]string, len(symbols))
+	for i, sym := range symbols {
+		symbolStrs[i] = string(sym)
 	}
 
-	symbolStrs := make([]string, 0, len(symbols))
-	for _, s := range symbols {
-		if str, ok := s.(string); ok {
-			symbolStrs = append(symbolStrs, str)
-		}
+	// Create pairs map for BaseSource (symbol -> quote currency)
+	pairs := make(map[string]string)
+	for _, symbol := range symbolStrs {
+		pairs[symbol] = "USD"
 	}
 
-	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("symbols list is required")
-	}
+	baseSource := sources.NewBaseSource("exchangerate", sources.SourceTypeFiat, pairs, logger)
 
-	// Get API key from config or environment
-	apiKey := ""
-	if key, ok := config["api_key"].(string); ok && key != "" {
-		apiKey = key
-	} else if keyEnv, ok := config["api_key_env"].(string); ok && keyEnv != "" {
-		// In production, would read from os.Getenv(keyEnv)
-		return nil, fmt.Errorf("api_key_env not yet implemented, please provide api_key directly")
-	}
-
-	if apiKey == "" {
-		return nil, fmt.Errorf("api_key is required for ExchangeRate source")
-	}
-
-	timeout := 5 * time.Second
-	if t, ok := config["timeout"].(int); ok {
-		timeout = time.Duration(t) * time.Millisecond
-	}
-
-	interval := 30 * time.Second
-	if i, ok := config["interval"].(int); ok {
-		interval = time.Duration(i) * time.Millisecond
-	}
-
-	logger, err := logging.Init("info", "json", "stdout")
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize logger: %w", err)
-	}
-
-	return &ExchangeRateSource{
-		name:     "exchangerate",
-		symbols:  symbolStrs,
-		apiKey:   apiKey,
-		timeout:  timeout,
-		interval: interval,
+	s := &ExchangeRateSource{
+		BaseSource: baseSource,
+		apiKey:     apiKey,
+		timeout:    timeout,
+		interval:   interval,
 		client: &http.Client{
 			Timeout: timeout,
 		},
-		prices:   make(map[string]sources.Price),
-		stopChan: make(chan struct{}),
-		logger:   logger,
-	}, nil
+	}
+
+	s.Logger().Info("Initializing ExchangeRate source", "symbols", len(s.Symbols()))
+	return s
 }
 
 func (s *ExchangeRateSource) Initialize(ctx context.Context) error {
-	s.logger.Info("Initializing ExchangeRate source", "symbols", len(s.symbols))
+	s.Logger().Info("Starting ExchangeRate source")
+
+	// Initial fetch with retries
+	if err := s.fetchWithRetries(ctx); err != nil {
+		s.Logger().Warn("Initial price fetch failed after retries", "error", err)
+	}
+
 	return nil
 }
 
 func (s *ExchangeRateSource) Start(ctx context.Context) error {
-	s.logger.Info("Starting ExchangeRate source")
-
-	// Initial fetch with retry
-	if err := s.retryFetch(ctx); err != nil {
-		s.logger.Warn("Initial price fetch failed after retries", "error", err)
-	}
-
-	// Start periodic updates
 	go func() {
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
 
 		for {
 			select {
-			case <-s.stopChan:
+			case <-ticker.C:
+				if err := s.fetchWithRetries(ctx); err != nil {
+					s.Logger().Warn("Periodic price fetch failed", "error", err.Error())
+				}
+			case <-s.StopChan():
 				return
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				s.retryFetch(ctx)
 			}
 		}
 	}()
@@ -134,7 +92,7 @@ func (s *ExchangeRateSource) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *ExchangeRateSource) retryFetch(ctx context.Context) error {
+func (s *ExchangeRateSource) fetchWithRetries(ctx context.Context) error {
 	maxRetries := 5
 	initialBackoff := time.Second
 	maxBackoff := 2 * time.Minute
@@ -143,7 +101,7 @@ func (s *ExchangeRateSource) retryFetch(ctx context.Context) error {
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		// Check if we should stop
 		select {
-		case <-s.stopChan:
+		case <-s.StopChan():
 			return fmt.Errorf("source stopped during retry")
 		case <-ctx.Done():
 			return ctx.Err()
@@ -152,12 +110,12 @@ func (s *ExchangeRateSource) retryFetch(ctx context.Context) error {
 
 		err := s.fetchPrices(ctx)
 		if err == nil {
-			s.setHealthy(true)
+			s.SetHealthy(true)
 			return nil
 		}
 
 		lastErr = err
-		s.logger.Warn("Fetch attempt failed",
+		s.Logger().Warn("Fetch attempt failed",
 			"attempt", attempt,
 			"max_retries", maxRetries,
 			"error", err,
@@ -173,7 +131,7 @@ func (s *ExchangeRateSource) retryFetch(ctx context.Context) error {
 			backoff = maxBackoff
 		}
 
-		s.logger.Debug("Retrying after backoff",
+		s.Logger().Debug("Retrying after backoff",
 			"backoff", backoff,
 			"attempt", attempt+1,
 		)
@@ -181,23 +139,25 @@ func (s *ExchangeRateSource) retryFetch(ctx context.Context) error {
 		select {
 		case <-time.After(backoff):
 			// Continue to next attempt
-		case <-s.stopChan:
+		case <-s.StopChan():
 			return fmt.Errorf("source stopped during backoff")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 
-	s.setHealthy(false)
-	s.logger.Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
+	s.SetHealthy(false)
+	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
 	return lastErr
 }
 
 func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
+	symbols := s.Symbols()
+	
 	// Convert symbols to API format
 	// SDR/USD -> XDR, EUR/USD -> EUR, etc.
-	apiSymbols := make([]string, 0, len(s.symbols))
-	for _, symbol := range s.symbols {
+	apiSymbols := make([]string, 0, len(symbols))
+	for _, symbol := range symbols {
 		if symbol == "SDR/USD" {
 			apiSymbols = append(apiSymbols, "XDR")
 		} else {
@@ -224,8 +184,8 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
-		s.logger.Warn("Rate limit exceeded", "source", s.name)
-		s.setHealthy(false)
+		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
+		s.SetHealthy(false)
 		return fmt.Errorf("rate limit exceeded (HTTP 429)")
 	}
 
@@ -246,7 +206,6 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	// ExchangeRate gives us USD/EUR rate, we need EUR/USD
 	// So we invert: EUR/USD = 1 / (USD/EUR)
 	now := time.Now()
-	newPrices := make(map[string]sources.Price)
 
 	for symbol, rate := range data.Rates {
 		// Convert back to our format
@@ -260,101 +219,14 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 		// Invert the rate (they give USD/XXX, we need XXX/USD)
 		price := 1.0 / rate
 
-		newPrices[targetSymbol] = sources.Price{
-			Symbol:    targetSymbol,
-			Price:     decimal.NewFromFloat(price),
-			Volume:    decimal.Zero,
-			Timestamp: now,
-			Source:    s.name,
-		}
+		s.SetPrice(targetSymbol, decimal.NewFromFloat(price), now)
 	}
 
-	// Update stored prices
-	s.pricesMu.Lock()
-	for symbol, price := range newPrices {
-		s.prices[symbol] = price
-	}
-	s.lastUpdate = now
-	s.pricesMu.Unlock()
-
-	// Notify subscribers
-	s.notifySubscribers(newPrices, nil)
-
-	s.logger.Debug("Updated prices from ExchangeRate", "count", len(newPrices))
+	s.Logger().Debug("Updated prices from ExchangeRate", "count", len(data.Rates))
 
 	return nil
-}
-
-func (s *ExchangeRateSource) Stop() error {
-	s.logger.Info("Stopping ExchangeRate source")
-	close(s.stopChan)
-	return nil
-}
-
-func (s *ExchangeRateSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-
-	result := make(map[string]sources.Price, len(s.prices))
-	for k, v := range s.prices {
-		result[k] = v
-	}
-
-	return result, nil
-}
-
-func (s *ExchangeRateSource) Subscribe(updates chan<- sources.PriceUpdate) error {
-	s.subscribersMu.Lock()
-	defer s.subscribersMu.Unlock()
-	s.subscribers = append(s.subscribers, updates)
-	return nil
-}
-
-func (s *ExchangeRateSource) Name() string {
-	return s.name
 }
 
 func (s *ExchangeRateSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
-}
-
-func (s *ExchangeRateSource) Symbols() []string {
-	return s.symbols
-}
-
-func (s *ExchangeRateSource) IsHealthy() bool {
-	s.healthMu.RLock()
-	defer s.healthMu.RUnlock()
-	return s.healthy
-}
-
-func (s *ExchangeRateSource) LastUpdate() time.Time {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-	return s.lastUpdate
-}
-
-func (s *ExchangeRateSource) setHealthy(healthy bool) {
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
-	s.healthy = healthy
-}
-
-func (s *ExchangeRateSource) notifySubscribers(prices map[string]sources.Price, err error) {
-	s.subscribersMu.RLock()
-	defer s.subscribersMu.RUnlock()
-
-	update := sources.PriceUpdate{
-		Source: s.name,
-		Prices: prices,
-		Error:  err,
-	}
-
-	for _, sub := range s.subscribers {
-		select {
-		case sub <- update:
-		default:
-			s.logger.Warn("Subscriber channel full, skipping update")
-		}
-	}
 }

@@ -82,9 +82,14 @@ event.Msg(msg)
 
 // Fatal logs a fatal message and exits
 func (l *Logger) Fatal(msg string, fields ...interface{}) {
-event := l.logger.Fatal()
-addFields(event, fields...)
-event.Msg(msg)
+	event := l.logger.Fatal()
+	addFields(event, fields...)
+	event.Msg(msg)
+}
+
+// ZerologLogger returns the underlying zerolog.Logger
+func (l *Logger) ZerologLogger() zerolog.Logger {
+	return l.logger
 }
 
 // addFields adds key-value pairs to a log event

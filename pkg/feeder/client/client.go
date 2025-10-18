@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,9 +36,10 @@ type Wasm interface {
 	SmartContractState(context.Context, *wasmtypes.QuerySmartContractStateRequest, ...grpc.CallOption) (*wasmtypes.QuerySmartContractStateResponse, error)
 }
 
-// TxService defines the interface for transaction broadcasting.
+// TxService defines the interface for transaction broadcasting and queries.
 type TxService interface {
 	BroadcastTx(context.Context, *txservice.BroadcastTxRequest, ...grpc.CallOption) (*txservice.BroadcastTxResponse, error)
+	GetTx(context.Context, *txservice.GetTxRequest, ...grpc.CallOption) (*txservice.GetTxResponse, error)
 }
 
 // Client wraps gRPC connections and provides oracle, auth, and tx service clients.
@@ -62,11 +64,16 @@ type Client struct {
 
 // ClientConfig holds configuration for creating a new Client.
 type ClientConfig struct {
-	Endpoints         []string                     // gRPC endpoints (with failover)
+	Endpoints         []EndpointConfig             // gRPC endpoints (with failover and per-endpoint TLS)
 	ChainID           string                       // Chain ID (for context)
-	EnableTLS         bool                         // Whether to use TLS
 	InterfaceRegistry codectypes.InterfaceRegistry // For unpacking Any types
 	Logger            zerolog.Logger               // Logger
+}
+
+// EndpointConfig represents a single gRPC endpoint with its TLS setting
+type EndpointConfig struct {
+	Address string
+	TLS     bool
 }
 
 // NewClient creates a new gRPC client with failover support across multiple endpoints.
@@ -76,34 +83,38 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("at least one gRPC endpoint is required")
 	}
 
-	var transportCreds grpc.DialOption
-	if cfg.EnableTLS {
-		transportCreds = grpc.WithTransportCredentials(
-			credentials.NewTLS(&tls.Config{
-				InsecureSkipVerify: false,
-			}),
-		)
-	} else {
-		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
-	}
-
 	conns := make([]*grpc.ClientConn, len(cfg.Endpoints))
-	for i, endpoint := range cfg.Endpoints {
-		conn, err := grpc.Dial(endpoint, transportCreds)
+	endpoints := make([]string, len(cfg.Endpoints))
+	
+	for i, epCfg := range cfg.Endpoints {
+		endpoints[i] = epCfg.Address
+		
+		var transportCreds grpc.DialOption
+		if epCfg.TLS {
+			transportCreds = grpc.WithTransportCredentials(
+				credentials.NewTLS(&tls.Config{
+					InsecureSkipVerify: false,
+				}),
+			)
+		} else {
+			transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+		}
+		
+		conn, err := grpc.Dial(epCfg.Address, transportCreds)
 		if err != nil {
 			// Close any successful connections before returning
 			for j := 0; j < i; j++ {
 				conns[j].Close()
 			}
-			return nil, fmt.Errorf("failed to connect to %s: %w", endpoint, err)
+			return nil, fmt.Errorf("failed to connect to %s: %w", epCfg.Address, err)
 		}
 		conns[i] = conn
-		cfg.Logger.Info().Str("endpoint", endpoint).Msg("Connected to gRPC endpoint")
+		cfg.Logger.Info().Str("endpoint", epCfg.Address).Bool("tls", epCfg.TLS).Msg("Connected to gRPC endpoint")
 	}
 
 	c := &Client{
 		logger:    cfg.Logger,
-		endpoints: cfg.Endpoints,
+		endpoints: endpoints,
 		current:   0,
 		conns:     conns,
 		ir:        cfg.InterfaceRegistry,
@@ -207,30 +218,101 @@ func (c *Client) Close() error {
 //	}
 //	params := resp.(*oracletypes.QueryParamsResponse)
 func WithFailover[T any](c *Client, call func() (T, error)) (T, error) {
-	var zero T
-	attempts := len(c.endpoints)
+	return WithFailoverRetry(c, call, 0) // Default: try all endpoints once
+}
 
-	for i := 0; i < attempts; i++ {
+// WithFailoverRetry wraps an RPC call with automatic failover and configurable retries.
+// 
+// Parameters:
+//   - call: The RPC function to execute
+//   - maxAttempts: Maximum number of attempts (0 = number of endpoints, no retries)
+//
+// Behavior:
+//   - For transient errors (NotFound, connection issues), retries on same endpoint with exponential backoff
+//   - For persistent errors, rotates to next endpoint
+//   - Uses exponential backoff: 500ms, 1s, 2s, 4s, 8s (capped at 8s)
+//
+// Example:
+//
+//	// Retry up to 10 times for tx confirmation (with backoff, no premature rotation)
+//	resp, err := WithFailoverRetry(c, func() (*txservice.GetTxResponse, error) {
+//		return c.TxClient().GetTx(ctx, &txservice.GetTxRequest{Hash: txHash})
+//	}, 10)
+func WithFailoverRetry[T any](c *Client, call func() (T, error), maxAttempts int) (T, error) {
+	var zero T
+	
+	// Default maxAttempts to number of endpoints (one try per endpoint, no retries)
+	if maxAttempts == 0 {
+		maxAttempts = len(c.endpoints)
+	}
+
+	currentEndpointAttempts := 0
+	endpointIndex := 0
+	baseDelay := 500 * time.Millisecond
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		resp, err := call()
 		if err == nil {
 			return resp, nil
 		}
 
-		c.logger.Error().
+		// Check if this is a transient error (expected during tx confirmation polling)
+		isTransientError := strings.Contains(err.Error(), "tx not found") ||
+			strings.Contains(err.Error(), "NotFound") ||
+			strings.Contains(err.Error(), "not found") ||
+			strings.Contains(err.Error(), "connection refused") ||
+			strings.Contains(err.Error(), "timeout")
+
+		// Determine if this is the last attempt overall
+		isLastAttempt := attempt == maxAttempts-1
+
+		// Log appropriately
+		logEvent := c.logger.Debug()
+		if isLastAttempt && !isTransientError {
+			logEvent = c.logger.Error()
+		}
+		
+		logEvent.
 			Err(err).
 			Str("endpoint", c.CurrentEndpoint()).
-			Int("attempt", i+1).
-			Int("max_attempts", attempts).
+			Int("attempt", attempt+1).
+			Int("max_attempts", maxAttempts).
+			Int("endpoint_attempts", currentEndpointAttempts+1).
+			Bool("transient", isTransientError).
 			Msg("RPC call failed")
 
-		// Don't failover on last attempt
-		if i < attempts-1 {
+		// Don't retry/failover on last attempt
+		if isLastAttempt {
+			break
+		}
+
+		currentEndpointAttempts++
+
+		// For transient errors, retry on same endpoint with exponential backoff
+		// For persistent errors, rotate to next endpoint after 2-3 attempts
+		shouldRotate := !isTransientError && currentEndpointAttempts >= 2
+
+		if shouldRotate && len(c.endpoints) > 1 {
 			c.Failover()
-			time.Sleep(500 * time.Millisecond) // Brief delay before retry
+			endpointIndex = (endpointIndex + 1) % len(c.endpoints)
+			currentEndpointAttempts = 0
+			time.Sleep(baseDelay) // Brief delay after rotation
+		} else {
+			// Exponential backoff: 500ms, 1s, 2s, 4s, 8s (capped)
+			delay := baseDelay * time.Duration(1<<min(currentEndpointAttempts, 4))
+			time.Sleep(delay)
 		}
 	}
 
-	return zero, fmt.Errorf("all %d gRPC endpoints failed", attempts)
+	return zero, fmt.Errorf("all %d attempts failed across gRPC endpoints", maxAttempts)
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // GetAccount retrieves account information (account number and sequence) for the given address.
@@ -292,6 +374,21 @@ func (c *Client) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespon
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to broadcast tx: %w", err)
+	}
+
+	return resp.TxResponse, nil
+}
+
+// GetTx retrieves a transaction by hash.
+// Uses failover with retries since tx may not be in a block yet (up to 10 attempts with exponential backoff).
+func (c *Client) GetTx(ctx context.Context, txHash string) (*sdk.TxResponse, error) {
+	resp, err := WithFailoverRetry(c, func() (*txservice.GetTxResponse, error) {
+		return c.TxClient().GetTx(ctx, &txservice.GetTxRequest{
+			Hash: txHash,
+		})
+	}, 10) // Retry up to 10 times with exponential backoff (max ~16s total)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tx: %w", err)
 	}
 
 	return resp.TxResponse, nil

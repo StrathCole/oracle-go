@@ -142,7 +142,7 @@ func (s *SDRSource) calculateSDR() error {
 
 		prices, err := source.GetPrices(context.Background())
 		if err != nil {
-			s.logger.Warn("Failed to get prices from source", "source", source.Name(), "error", err)
+			s.logger.Warn("Failed to get prices from source", "source", source.Name(), "error", err.Error())
 			continue
 		}
 

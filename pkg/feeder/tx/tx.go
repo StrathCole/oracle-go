@@ -149,15 +149,21 @@ func (b *Broadcaster) BroadcastTx(ctx context.Context, req BroadcastTxRequest) (
 // This is a simple estimation based on message count.
 // For more accurate estimation, you could simulate the transaction.
 //
-// Returns the estimated gas limit.
+// Returns the estimated gas limit with a 20% safety buffer.
 func EstimateGas(numMsgs int) uint64 {
 	// Base gas for transaction overhead
 	const baseGas uint64 = 50000
 
-	// Gas per message (oracle messages are relatively cheap)
-	const gasPerMsg uint64 = 50000
+	// Gas per message (oracle messages need ~75k each based on real usage)
+	const gasPerMsg uint64 = 75000
 
-	return baseGas + (uint64(numMsgs) * gasPerMsg)
+	// Calculate base estimate
+	estimate := baseGas + (uint64(numMsgs) * gasPerMsg)
+	
+	// Add 20% safety buffer to handle gas fluctuations
+	buffer := estimate / 5 // 20%
+	
+	return estimate + buffer
 }
 
 // CalculateFee calculates the fee for a transaction given gas limit and gas price.

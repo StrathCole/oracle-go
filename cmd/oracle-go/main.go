@@ -9,9 +9,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/auth/tx"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	vestingtypes "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"tc.com/oracle-prices/pkg/config"
+	feederClient "tc.com/oracle-prices/pkg/feeder/client"
+	"tc.com/oracle-prices/pkg/feeder/eventstream"
+	"tc.com/oracle-prices/pkg/feeder/keystore"
+	feedertx "tc.com/oracle-prices/pkg/feeder/tx"
+	"tc.com/oracle-prices/pkg/feeder/voter"
 	"tc.com/oracle-prices/pkg/logging"
 	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/aggregator"
@@ -20,6 +33,10 @@ import (
 
 	// Import sources to register them
 	_ "tc.com/oracle-prices/pkg/server/sources/cex"
+	"tc.com/oracle-prices/pkg/server/sources/cosmwasm"
+	_ "tc.com/oracle-prices/pkg/server/sources/evm"
+	_ "tc.com/oracle-prices/pkg/server/sources/fiat"
+	_ "tc.com/oracle-prices/pkg/server/sources/oracle"
 )
 
 const version = "0.1.0-dev"
@@ -29,6 +46,7 @@ var (
 	showVer    = flag.Bool("version", false, "Show version and exit")
 	serverOnly = flag.Bool("server", false, "Run price server only")
 	feederOnly = flag.Bool("feeder", false, "Run feeder only")
+	dryRun     = flag.Bool("dry-run", false, "Dry run mode: create votes but don't submit them (for testing)")
 )
 
 func main() {
@@ -63,6 +81,11 @@ func main() {
 		cfg.Mode = "feeder"
 	}
 
+	// Override dry-run setting from command line
+	if *dryRun {
+		cfg.Feeder.DryRun = true
+	}
+
 	// Validate configuration
 	if err := config.Validate(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
@@ -78,6 +101,11 @@ func main() {
 	logging.SetGlobal(logger)
 
 	logger.Info("Starting oracle-go", "version", version, "mode", cfg.Mode)
+
+	// Log dry-run mode if enabled
+	if cfg.Feeder.DryRun {
+		logger.Warn("DRY RUN MODE ENABLED - Votes will be created but NOT submitted to the blockchain")
+	}
 
 	// Initialize metrics
 	if cfg.Metrics.Enabled {
@@ -136,15 +164,57 @@ func main() {
 }
 
 func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) error {
+	// Initialize gRPC client for CosmWasm sources if any are enabled
+	var grpcClient *feederClient.Client
+	for _, sourceCfg := range cfg.Sources {
+		if sourceCfg.Enabled && sourceCfg.Type == "cosmwasm" {
+			// Need to create gRPC client
+			// Convert GRPCEndpoint structs to EndpointConfig
+			var endpoints []feederClient.EndpointConfig
+			for _, ep := range cfg.Feeder.GRPCEndpoints {
+				endpoints = append(endpoints, feederClient.EndpointConfig{
+					Address: ep.ToAddress(),
+					TLS:     ep.TLS,
+				})
+			}
+
+			ir := codectypes.NewInterfaceRegistry()
+			clientCfg := feederClient.ClientConfig{
+				Endpoints:         endpoints,
+				ChainID:           cfg.Feeder.ChainID,
+				InterfaceRegistry: ir,
+				Logger:            logger.ZerologLogger(),
+			}
+
+			var err error
+			grpcClient, err = feederClient.NewClient(clientCfg)
+			if err != nil {
+				logger.Warn("Failed to create gRPC client for CosmWasm sources", "error", err)
+			} else {
+				// Set the global gRPC client for CosmWasm sources
+				cosmwasm.SetGRPCClient(grpcClient)
+				
+				// Log endpoint addresses
+				var addrs []string
+				for _, e := range endpoints {
+					addrs = append(addrs, e.Address)
+				}
+				logger.Info("Initialized gRPC client for CosmWasm sources", "endpoints", addrs)
+			}
+			break
+		}
+	}
+
 	// Initialize sources
 	var allSources []sources.Source
+	sourceWeights := make(map[string]float64) // Track weights for aggregation
 
 	for _, sourceCfg := range cfg.Sources {
 		if !sourceCfg.Enabled {
 			continue
 		}
 
-		logger.Info("Initializing source", "type", sourceCfg.Type, "name", sourceCfg.Name)
+		logger.Info("Initializing source", "type", sourceCfg.Type, "name", sourceCfg.Name, "weight", sourceCfg.Weight)
 
 		source, err := sources.Create(sourceCfg.Type, sourceCfg.Name, sourceCfg.Config)
 		if err != nil {
@@ -163,7 +233,15 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		}
 
 		allSources = append(allSources, source)
-		logger.Info("Source started", "source", source.Name(), "symbols", source.Symbols())
+		
+		// Store weight (default to 1.0 if not specified)
+		weight := sourceCfg.Weight
+		if weight == 0 {
+			weight = 1.0
+		}
+		sourceWeights[source.Name()] = weight
+		
+		logger.Info("Source started", "source", source.Name(), "symbols", source.Symbols(), "weight", weight)
 	}
 
 	if len(allSources) == 0 {
@@ -178,7 +256,7 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	logger.Info("Created aggregator", "mode", cfg.Server.AggregateMode)
 
 	// Start HTTP server
-	server := api.NewServer(cfg.Server.HTTP.Addr, allSources, agg, cfg.Server.CacheTTL.ToDuration(), logger)
+	server := api.NewServer(cfg.Server.HTTP.Addr, allSources, agg, sourceWeights, cfg.Server.CacheTTL.ToDuration(), logger)
 
 	// Start WebSocket server if enabled
 	var wsServer *api.WebSocketServer
@@ -208,15 +286,203 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		for _, source := range allSources {
 			source.Stop()
 		}
+
+		// Close gRPC client if initialized
+		if grpcClient != nil {
+			grpcClient.Close()
+		}
 	}()
 
 	return server.Start()
 }
 
 func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) error {
-	// TODO: Implement feeder component
-	logger.Warn("Feeder component not yet implemented")
+	logger.Info("Initializing feeder component",
+		"chain_id", cfg.Feeder.ChainID,
+		"validators", len(cfg.Feeder.Validators),
+		"grpc_endpoints", len(cfg.Feeder.GRPCEndpoints))
 
-	<-ctx.Done()
-	return nil
+	// Get mnemonic (from config or environment variable)
+	mnemonic := cfg.Feeder.Mnemonic
+	if cfg.Feeder.MnemonicEnv != "" {
+		mnemonic = os.Getenv(cfg.Feeder.MnemonicEnv)
+		if mnemonic == "" {
+			return fmt.Errorf("environment variable %s not set", cfg.Feeder.MnemonicEnv)
+		}
+	}
+	if mnemonic == "" {
+		return fmt.Errorf("no mnemonic configured")
+	}
+
+	// Determine HD derivation path
+	hdPath := cfg.Feeder.HDPath
+	if hdPath == "" {
+		// Default to Terra Classic path based on coin type
+		coinType := cfg.Feeder.CoinType
+		if coinType == 0 {
+			coinType = 330 // Terra Classic default
+		}
+		hdPath = fmt.Sprintf("m/44'/%d'/0'/0/0", coinType)
+	}
+	logger.Info("Using HD derivation path", "path", hdPath)
+
+	// Create keyring from mnemonic
+	kr, _, feederAddr := keystore.GetAuth(mnemonic, hdPath)
+	logger.Info("Loaded feeder account", "address", feederAddr.String())
+
+	// Create encoding config (includes all registered account types)
+	encCfg := makeEncodingConfig()
+
+	// Convert GRPCEndpoint structs to EndpointConfig
+	var endpoints []feederClient.EndpointConfig
+	for _, ep := range cfg.Feeder.GRPCEndpoints {
+		endpoints = append(endpoints, feederClient.EndpointConfig{
+			Address: ep.ToAddress(),
+			TLS:     ep.TLS,
+		})
+	}
+
+	// Create gRPC client with properly configured interface registry
+	clientCfg := feederClient.ClientConfig{
+		Endpoints:         endpoints,
+		ChainID:           cfg.Feeder.ChainID,
+		InterfaceRegistry: encCfg.InterfaceRegistry,
+		Logger:            logger.ZerologLogger(),
+	}
+
+	grpcClient, err := feederClient.NewClient(clientCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create gRPC client: %w", err)
+	}
+	defer grpcClient.Close()
+
+	// Log endpoint addresses
+	var addrs []string
+	for _, e := range endpoints {
+		addrs = append(addrs, e.Address)
+	}
+	logger.Info("Connected to gRPC endpoints", "endpoints", addrs)
+
+	// Transaction config was already created above in encCfg
+	txConfig := encCfg.TxConfig
+
+	// Create broadcaster
+	broadcaster := feedertx.NewBroadcaster(feedertx.BroadcasterConfig{
+		Client:   grpcClient,
+		Keyring:  kr,
+		TxConfig: txConfig,
+		ChainID:  cfg.Feeder.ChainID,
+		Logger:   logger.ZerologLogger(),
+	})
+
+	// Configure Tendermint WebSocket URLs from RPC endpoints
+	// Convert RPCEndpoint structs to URLs
+	var rpcEndpoints []string
+	for _, rpcEp := range cfg.Feeder.RPCEndpoints {
+		rpcEndpoints = append(rpcEndpoints, rpcEp.ToURL())
+	}
+	logger.Info("Using configured RPC endpoints", "endpoints", rpcEndpoints)
+
+	// Create event stream with failover support
+	eventStream, err := eventstream.NewStreamWithFailover(rpcEndpoints, grpcClient, logger.ZerologLogger())
+	if err != nil {
+		return fmt.Errorf("failed to create event stream: %w", err)
+	}
+
+	// Start event stream
+	if err := eventStream.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start event stream: %w", err)
+	}
+
+	// Parse fee amount (oracle txs can be free, so 0 amount is valid)
+	feeDenom := "uluna" // Default denom
+	if cfg.Feeder.FeeAmount != "" {
+		logger.Info("Parsing fee configuration", "fee_amount", cfg.Feeder.FeeAmount, "gas_price", cfg.Feeder.GasPrice)
+		
+		feeCoins, err := sdk.ParseCoinsNormalized(cfg.Feeder.FeeAmount)
+		if err != nil {
+			return fmt.Errorf("invalid fee amount '%s': %w", cfg.Feeder.FeeAmount, err)
+		}
+		if len(feeCoins) > 0 {
+			feeDenom = feeCoins[0].Denom
+		}
+	} else {
+		logger.Info("No fee amount configured, using zero fees (oracle txs are free)")
+	}
+
+	// Create voter
+	voterCfg := voter.Config{
+		ChainID:       cfg.Feeder.ChainID,
+		Validators:    cfg.Feeder.Validators,
+		Feeder:        feederAddr.String(),
+		PriceSource:   cfg.Feeder.PriceSource.URL,
+		MaxRetries:    3,
+		RetryInterval: 5 * time.Second,
+		GasPrice:      cfg.Feeder.GasPrice,
+		FeeDenom:      feeDenom,
+		DryRun:        cfg.Feeder.DryRun,
+	}
+
+	v, err := voter.NewVoter(voterCfg, grpcClient, broadcaster, eventStream, logger.ZerologLogger())
+	if err != nil {
+		return fmt.Errorf("failed to create voter: %w", err)
+	}
+
+	logger.Info("Starting oracle voter")
+
+	// Start voter (blocks until context is canceled)
+	return v.Start(ctx)
+}
+
+// makeEncodingConfig creates an encoding config for transaction encoding
+func makeEncodingConfig() EncodingConfig {
+	amino := codec.NewLegacyAmino()
+	interfaceRegistry := codectypes.NewInterfaceRegistry()
+	
+	// Register all standard SDK modules
+	std.RegisterLegacyAminoCodec(amino)
+	std.RegisterInterfaces(interfaceRegistry)
+	
+	// Register auth module types (required for account queries)
+	authtypes.RegisterLegacyAminoCodec(amino)
+	authtypes.RegisterInterfaces(interfaceRegistry)
+	
+	// Register vesting types (Terra Classic uses vesting accounts)
+	vestingtypes.RegisterInterfaces(interfaceRegistry)
+	
+	// Register bank types
+	banktypes.RegisterInterfaces(interfaceRegistry)
+	
+	// Register concrete account types explicitly
+	interfaceRegistry.RegisterImplementations(
+		(*authtypes.AccountI)(nil),
+		&authtypes.BaseAccount{},
+		&vestingtypes.PeriodicVestingAccount{},
+		&vestingtypes.ContinuousVestingAccount{},
+		&vestingtypes.DelayedVestingAccount{},
+		&vestingtypes.PermanentLockedAccount{},
+	)
+	interfaceRegistry.RegisterImplementations(
+		(*authtypes.GenesisAccount)(nil),
+		&authtypes.BaseAccount{},
+		&authtypes.ModuleAccount{},
+	)
+
+	marshaler := codec.NewProtoCodec(interfaceRegistry)
+	txCfg := tx.NewTxConfig(marshaler, tx.DefaultSignModes)
+
+	return EncodingConfig{
+		InterfaceRegistry: interfaceRegistry,
+		Codec:             marshaler,
+		TxConfig:          txCfg,
+		Amino:             amino,
+	}
+}
+
+// EncodingConfig specifies the concrete encoding types to use for a given app.
+type EncodingConfig struct {
+	InterfaceRegistry codectypes.InterfaceRegistry
+	Codec             codec.Codec
+	TxConfig          client.TxConfig
+	Amino             *codec.LegacyAmino
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -23,20 +22,11 @@ const (
 // https://bandprotocol.com/
 // Supports both crypto and fiat price feeds
 type BandProtocolSource struct {
-	name          string
-	symbols       []string
-	timeout       time.Duration
-	interval      time.Duration
-	client        *http.Client
-	prices        map[string]sources.Price
-	pricesMu      sync.RWMutex
-	lastUpdate    time.Time
-	healthy       bool
-	healthMu      sync.RWMutex
-	subscribers   []chan<- sources.PriceUpdate
-	subscribersMu sync.RWMutex
-	stopChan      chan struct{}
-	logger        *logging.Logger
+	*sources.BaseSource
+	
+	timeout  time.Duration
+	interval time.Duration
+	client   *http.Client
 }
 
 // BandPriceResult represents a single price from Band Protocol
@@ -85,34 +75,37 @@ func NewBandProtocolSource(config map[string]interface{}) (sources.Source, error
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
+	// Create symbol mapping (Band uses same symbols, no transformation needed)
+	pairs := make(map[string]string, len(symbolStrs))
+	for _, symbol := range symbolStrs {
+		pairs[symbol] = symbol
+	}
+
+	// Create BaseSource
+	base := sources.NewBaseSource("band", sources.SourceTypeOracle, pairs, logger)
+
 	return &BandProtocolSource{
-		name:     "band",
-		symbols:  symbolStrs,
-		timeout:  timeout,
-		interval: interval,
+		BaseSource: base,
+		timeout:    timeout,
+		interval:   interval,
 		client: &http.Client{
 			Timeout: timeout,
 		},
-		prices:   make(map[string]sources.Price),
-		stopChan: make(chan struct{}),
-		logger:   logger,
 	}, nil
 }
 
 func (s *BandProtocolSource) Initialize(ctx context.Context) error {
-	s.logger.Info("Initializing Band Protocol source", "symbols", len(s.symbols))
+	s.Logger().Info("Initializing Band Protocol source", "symbols", len(s.Symbols()))
 	return nil
 }
 
 func (s *BandProtocolSource) Start(ctx context.Context) error {
-	s.logger.Info("Starting Band Protocol source")
+	s.Logger().Info("Starting Band Protocol source")
 
 	// Initial fetch
 	if err := s.fetchPrices(ctx); err != nil {
-		s.logger.Warn("Initial price fetch failed", "error", err)
-		s.setHealthy(false)
-	} else {
-		s.setHealthy(true)
+		s.Logger().Warn("Initial price fetch failed", "error", err.Error())
+		s.SetHealthy(false)
 	}
 
 	// Start periodic updates
@@ -122,16 +115,14 @@ func (s *BandProtocolSource) Start(ctx context.Context) error {
 
 		for {
 			select {
-			case <-s.stopChan:
+			case <-s.StopChan():
 				return
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				if err := s.fetchPrices(ctx); err != nil {
-					s.logger.Error("Failed to fetch prices", "error", err)
-					s.setHealthy(false)
-				} else {
-					s.setHealthy(true)
+					s.Logger().Error("Failed to fetch prices", "error", err.Error())
+					s.SetHealthy(false)
 				}
 			}
 		}
@@ -143,8 +134,8 @@ func (s *BandProtocolSource) Start(ctx context.Context) error {
 func (s *BandProtocolSource) fetchPrices(ctx context.Context) error {
 	// Convert our symbols to Band format
 	// EUR/USD -> EUR, BTC/USD -> BTC, etc.
-	bandSymbols := make([]string, 0, len(s.symbols))
-	for _, symbol := range s.symbols {
+	bandSymbols := make([]string, 0, len(s.Symbols()))
+	for _, symbol := range s.Symbols() {
 		parts := strings.Split(symbol, "/")
 		if len(parts) == 2 {
 			// Band uses simple symbols like "BTC", "EUR", etc.
@@ -193,41 +184,25 @@ func (s *BandProtocolSource) fetchPrices(ctx context.Context) error {
 
 	// Convert prices
 	now := time.Now()
-	newPrices := make(map[string]sources.Price)
 
 	for _, result := range data.PriceResults {
 		// Band returns prices as integers with a multiplier
 		// Price = px / multiplier
 		priceFloat, err := result.getPrice()
 		if err != nil {
-			s.logger.Warn("Failed to parse Band price", "symbol", result.Symbol, "error", err)
+			s.Logger().Warn("Failed to parse Band price", "symbol", result.Symbol, "error", err.Error())
 			continue
 		}
 
 		// Convert back to our format (e.g., BTC -> BTC/USD)
 		symbol := result.Symbol + "/USD"
 
-		newPrices[symbol] = sources.Price{
-			Symbol:    symbol,
-			Price:     decimal.NewFromFloat(priceFloat),
-			Volume:    decimal.Zero,
-			Timestamp: now,
-			Source:    s.name,
-		}
+		// Use BaseSource.SetPrice() which handles storage, metrics, and notification
+		s.SetPrice(symbol, decimal.NewFromFloat(priceFloat), now)
 	}
 
-	// Update stored prices
-	s.pricesMu.Lock()
-	for symbol, price := range newPrices {
-		s.prices[symbol] = price
-	}
-	s.lastUpdate = now
-	s.pricesMu.Unlock()
-
-	// Notify subscribers
-	s.notifySubscribers(newPrices, nil)
-
-	s.logger.Debug("Updated prices from Band Protocol", "count", len(newPrices))
+	s.Logger().Debug("Updated prices from Band Protocol")
+	s.SetHealthy(true)
 
 	return nil
 }
@@ -253,75 +228,21 @@ func (r *bandPriceResult) getPrice() (float64, error) {
 }
 
 func (s *BandProtocolSource) Stop() error {
-	s.logger.Info("Stopping Band Protocol source")
-	close(s.stopChan)
+	s.Logger().Info("Stopping Band Protocol source")
+	s.Close()
 	return nil
 }
 
 func (s *BandProtocolSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-
-	result := make(map[string]sources.Price, len(s.prices))
-	for k, v := range s.prices {
-		result[k] = v
-	}
-
-	return result, nil
+	return s.GetAllPrices(), nil
 }
 
 func (s *BandProtocolSource) Subscribe(updates chan<- sources.PriceUpdate) error {
-	s.subscribersMu.Lock()
-	defer s.subscribersMu.Unlock()
-	s.subscribers = append(s.subscribers, updates)
+	s.AddSubscriber(updates)
 	return nil
 }
 
-func (s *BandProtocolSource) Name() string {
-	return s.name
-}
-
+// Type returns the source type (overrides BaseSource since it stores it differently)
 func (s *BandProtocolSource) Type() sources.SourceType {
 	return sources.SourceTypeOracle
-}
-
-func (s *BandProtocolSource) Symbols() []string {
-	return s.symbols
-}
-
-func (s *BandProtocolSource) IsHealthy() bool {
-	s.healthMu.RLock()
-	defer s.healthMu.RUnlock()
-	return s.healthy
-}
-
-func (s *BandProtocolSource) LastUpdate() time.Time {
-	s.pricesMu.RLock()
-	defer s.pricesMu.RUnlock()
-	return s.lastUpdate
-}
-
-func (s *BandProtocolSource) setHealthy(healthy bool) {
-	s.healthMu.Lock()
-	defer s.healthMu.Unlock()
-	s.healthy = healthy
-}
-
-func (s *BandProtocolSource) notifySubscribers(prices map[string]sources.Price, err error) {
-	s.subscribersMu.RLock()
-	defer s.subscribersMu.RUnlock()
-
-	update := sources.PriceUpdate{
-		Source: s.name,
-		Prices: prices,
-		Error:  err,
-	}
-
-	for _, sub := range s.subscribers {
-		select {
-		case sub <- update:
-		default:
-			s.logger.Warn("Subscriber channel full, skipping update")
-		}
-	}
 }

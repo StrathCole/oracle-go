@@ -15,26 +15,28 @@ import (
 
 // Server represents the HTTP API server
 type Server struct {
-	addr       string
-	sources    []sources.Source
-	aggregator aggregator.Aggregator
-	server     *http.Server
-	logger     *logging.Logger
-	cacheTTL   time.Duration
-	lastCache  map[string]sources.Price
-	cacheTime  time.Time
-	wsServer   *WebSocketServer // Optional WebSocket server for streaming
+	addr          string
+	sources       []sources.Source
+	sourceWeights map[string]float64 // Weight for each source in aggregation
+	aggregator    aggregator.Aggregator
+	server        *http.Server
+	logger        *logging.Logger
+	cacheTTL      time.Duration
+	lastCache     map[string]sources.Price
+	cacheTime     time.Time
+	wsServer      *WebSocketServer // Optional WebSocket server for streaming
 }
 
 // NewServer creates a new HTTP API server
-func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggregator, cacheTTL time.Duration, logger *logging.Logger) *Server {
+func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggregator, weights map[string]float64, cacheTTL time.Duration, logger *logging.Logger) *Server {
 	return &Server{
-		addr:       addr,
-		sources:    sourcesSlice,
-		aggregator: agg,
-		logger:     logger,
-		cacheTTL:   cacheTTL,
-		lastCache:  make(map[string]sources.Price),
+		addr:          addr,
+		sources:       sourcesSlice,
+		sourceWeights: weights,
+		aggregator:    agg,
+		logger:        logger,
+		cacheTTL:      cacheTTL,
+		lastCache:     make(map[string]sources.Price),
 	}
 }
 
@@ -109,7 +111,7 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 
 		prices, err := source.GetPrices(ctx)
 		if err != nil {
-			s.logger.Error("Failed to get prices from source", "source", source.Name(), "error", err)
+			s.logger.Error("Failed to get prices from source", "source", source.Name(), "error", err.Error())
 			continue
 		}
 
@@ -122,8 +124,8 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Aggregate prices using median with outlier detection
-	aggregatedPrices, err := s.aggregator.Aggregate(sourcePrices)
+	// Aggregate prices using configured aggregator with source weights
+	aggregatedPrices, err := s.aggregator.Aggregate(sourcePrices, s.sourceWeights)
 	if err != nil {
 		status = "503"
 		s.logger.Error("Failed to aggregate prices", "error", err)
@@ -148,8 +150,8 @@ func (s *Server) convertToArray(prices map[string]sources.Price) []map[string]in
 	result := make([]map[string]interface{}, 0, len(prices))
 	for _, price := range prices {
 		result = append(result, map[string]interface{}{
-			"denom": price.Symbol,
-			"price": price.Price.String(),
+			"symbol": price.Symbol,
+			"price":  price.Price.String(),
 		})
 	}
 	return result

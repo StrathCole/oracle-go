@@ -42,7 +42,7 @@ func NewCoinGeckoSource(config map[string]interface{}) (sources.Source, error) {
 		return nil, fmt.Errorf("failed to parse pairs: %w", err)
 	}
 
-	updateInterval := 60 * time.Second
+	updateInterval := 15 * time.Second // Default 15s (vote period is 30s)
 	if interval, ok := config["update_interval"].(string); ok {
 		if d, err := time.ParseDuration(interval); err == nil {
 			updateInterval = d
@@ -98,7 +98,7 @@ func (s *CoinGeckoSource) Start(ctx context.Context) error {
 
 	// Fetch initial prices
 	if err := s.fetchPrices(ctx); err != nil {
-		s.Logger().Warn("Failed to fetch initial prices", "error", err)
+		s.Logger().Warn("Failed to fetch initial prices", "error", err.Error())
 	}
 
 	// Start update loop
@@ -204,6 +204,8 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 		url += "&x_cg_pro_api_key=" + s.apiKey
 	}
 
+	s.Logger().Debug("Fetching from CoinGecko", "url", url, "ids", ids)
+
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -234,24 +236,32 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	// Parse response
 	var data map[string]map[string]float64
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+		return fmt.Errorf("failed to decode CoinGecko response: %w (URL: %s)", err, url)
 	}
+
+	s.Logger().Debug("CoinGecko API response", "data", data, "idToSymbol", idToSymbol)
 
 	// Update prices using BaseSource methods
 	updateTime := time.Now()
 	updateCount := 0
 
 	for coinGeckoID, priceData := range data {
+		s.Logger().Debug("Processing CoinGecko ID", "id", coinGeckoID, "priceData", priceData)
+
 		usdPrice, ok := priceData["usd"]
 		if !ok {
+			s.Logger().Warn("No USD price in response", "id", coinGeckoID, "priceData", priceData)
 			continue
 		}
 
 		// Get the unified symbol for this CoinGecko ID
 		unifiedSymbol, ok := idToSymbol[coinGeckoID]
 		if !ok {
+			s.Logger().Warn("No symbol mapping found", "id", coinGeckoID, "available_mappings", idToSymbol)
 			continue
 		}
+
+		s.Logger().Debug("Setting price", "symbol", unifiedSymbol, "price", usdPrice)
 
 		// Use BaseSource SetPrice
 		s.SetPrice(unifiedSymbol, decimal.NewFromFloat(usdPrice), updateTime)
@@ -260,7 +270,7 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updateCount == 0 {
-		return fmt.Errorf("no prices extracted from response")
+		return fmt.Errorf("no prices extracted from response (got %d items from API, %d symbol mappings)", len(data), len(idToSymbol))
 	}
 
 	s.SetHealthy(true)

@@ -53,6 +53,7 @@ type Voter struct {
 	retryInterval time.Duration
 	gasPrice      string
 	feeDenom      string
+	dryRun        bool // If true, create votes but don't submit them
 }
 
 // Config contains voter configuration
@@ -65,6 +66,7 @@ type Config struct {
 	RetryInterval time.Duration
 	GasPrice      string
 	FeeDenom      string
+	DryRun        bool // If true, create votes but don't submit them
 }
 
 // NewVoter creates a new voter instance
@@ -112,6 +114,7 @@ func NewVoter(
 		retryInterval: cfg.RetryInterval,
 		gasPrice:      cfg.GasPrice,
 		feeDenom:      cfg.FeeDenom,
+		dryRun:        cfg.DryRun,
 	}, nil
 }
 
@@ -178,9 +181,25 @@ func (v *Voter) performVoteCycle(ctx context.Context, period uint64) error {
 		return fmt.Errorf("oracle whitelist not yet loaded")
 	}
 
+	v.logger.Debug().
+		Int("total_prices", len(prices)).
+		Strs("whitelist", v.whitelist).
+		Interface("price_symbols", func() []string {
+			symbols := make([]string, 0, len(prices))
+			for symbol := range prices {
+				symbols = append(symbols, symbol)
+			}
+			return symbols
+		}()).
+		Msg("Price fetching complete")
+
 	// Convert prices to oracle.Price format and filter by whitelist
 	oraclePrices := v.convertToOraclePrices(prices, v.whitelist)
 	if len(oraclePrices) == 0 {
+		v.logger.Error().
+			Int("total_prices", len(prices)).
+			Strs("whitelist", v.whitelist).
+			Msg("No whitelisted prices available - check symbol to denom conversion")
 		return fmt.Errorf("no whitelisted prices available")
 	}
 
@@ -227,7 +246,12 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 	if oldPrevote, exists := v.prevotes[valKey]; exists {
 		vote := oracle.NewVote(oldPrevote, validator, v.feeder)
 		msgs = append(msgs, vote)
-		v.logger.Debug().Str("validator", valKey).Msg("Including vote from previous prevote")
+		v.logger.Info().
+			Str("validator", valKey).
+			Str("salt", oldPrevote.Salt).
+			Str("vote_string", oldPrevote.Vote).
+			Str("prevote_hash", oldPrevote.Msg.Hash).
+			Msg("Including vote from previous prevote")
 	}
 
 	// Add new prevote for current period
@@ -235,15 +259,54 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 
 	// Submit transaction
 	if err := v.broadcastVoteTx(ctx, msgs, period); err != nil {
-		return fmt.Errorf("failed to broadcast vote tx: %w", err)
+		// Clear any stored prevote on failure - we cannot vote for a prevote
+		// that wasn't successfully submitted on-chain
+		if _, hadPrevote := v.prevotes[valKey]; hadPrevote {
+			delete(v.prevotes, valKey)
+			v.logger.Warn().
+				Str("validator", valKey).
+				Msg("Cleared stored prevote after transaction failure")
+		}
+
+		// Immediately retry with fresh prevote-only transaction to minimize missed votes
+		// This ensures we only miss one period instead of two
+		v.logger.Info().
+			Str("validator", valKey).
+			Msg("Attempting immediate recovery with fresh prevote")
+
+		freshPrevote, err := oracle.NewPrevote(prices, validator, v.feeder, v.logger)
+		if err != nil {
+			v.logger.Error().Err(err).Msg("Failed to create fresh prevote for recovery")
+			return fmt.Errorf("failed to broadcast vote tx and recovery failed: %w", err)
+		}
+
+		// Try to submit just the fresh prevote (no vote since we have nothing to vote for)
+		if err := v.broadcastVoteTx(ctx, []sdk.Msg{freshPrevote.Msg}, period); err != nil {
+			v.logger.Error().
+				Err(err).
+				Str("validator", valKey).
+				Msg("Recovery prevote also failed - will retry next period")
+			return fmt.Errorf("failed to broadcast vote tx and recovery prevote: %w", err)
+		}
+
+		// Recovery successful - store the fresh prevote
+		v.prevotes[valKey] = freshPrevote
+		v.logger.Info().
+			Str("validator", valKey).
+			Str("fresh_prevote_hash", freshPrevote.Msg.Hash).
+			Msg("Recovery successful - fresh prevote submitted")
+
+		return nil
 	}
 
-	// Store prevote for next period
+	// Store prevote for next period (only if transaction succeeded)
 	v.prevotes[valKey] = prevote
 
 	v.logger.Info().
 		Str("validator", valKey).
 		Uint64("period", period).
+		Str("new_prevote_hash", prevote.Msg.Hash).
+		Str("new_vote_string", prevote.Vote).
 		Msg("Submitted vote")
 
 	return nil
@@ -251,6 +314,42 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 
 // broadcastVoteTx broadcasts a vote transaction with retry logic
 func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint64) error {
+	// Dry-run mode: log the vote details but don't actually submit
+	if v.dryRun {
+		v.logger.Warn().Msg("DRY RUN MODE: Transaction would be broadcast but is skipped")
+		
+		for i, msg := range msgs {
+			// Use String() to get message representation
+			msgStr := msg.String()
+			msgType := fmt.Sprintf("%T", msg)
+			
+			// Try to identify message type from string representation
+			if strings.Contains(msgType, "MsgAggregateExchangeRatePrevote") {
+				v.logger.Info().
+					Int("msg_index", i).
+					Str("type", "prevote").
+					Str("message", msgStr).
+					Uint64("period", period).
+					Msg("DRY RUN: Would submit prevote")
+			} else if strings.Contains(msgType, "MsgAggregateExchangeRateVote") {
+				v.logger.Info().
+					Int("msg_index", i).
+					Str("type", "vote").
+					Str("message", msgStr).
+					Uint64("period", period).
+					Msg("DRY RUN: Would submit vote")
+			} else {
+				v.logger.Info().
+					Int("msg_index", i).
+					Str("type", msgType).
+					Str("message", msgStr).
+					Msg("DRY RUN: Would submit message")
+			}
+		}
+		
+		return nil // Pretend success in dry-run mode
+	}
+
 	var lastErr error
 
 	// Estimate gas
@@ -287,7 +386,9 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 				Str("tx_hash", txResp.TxHash).
 				Uint64("height", uint64(txResp.Height)).
 				Msg("Vote transaction broadcast successful")
-			return nil
+
+			// Wait for transaction to be included in a block and check result
+			return v.verifyTxResult(ctx, txResp.TxHash)
 		}
 
 		lastErr = err
@@ -295,6 +396,37 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 	}
 
 	return fmt.Errorf("failed after %d attempts: %w", v.maxRetries, lastErr)
+}
+
+// verifyTxResult waits for a transaction to be included in a block and verifies it succeeded
+func (v *Voter) verifyTxResult(ctx context.Context, txHash string) error {
+	// GetTx now has built-in retry logic with exponential backoff (up to 10 attempts)
+	// No need for manual retry loop here
+	txResp, err := v.grpcClient.GetTx(ctx, txHash)
+	if err != nil {
+		v.logger.Error().
+			Err(err).
+			Str("tx_hash", txHash).
+			Msg("Failed to query transaction after retries")
+		return fmt.Errorf("failed to verify tx %s: %w", txHash, err)
+	}
+
+	// Check if transaction succeeded
+	if txResp.Code != 0 {
+		v.logger.Error().
+			Str("tx_hash", txHash).
+			Uint32("code", txResp.Code).
+			Str("raw_log", txResp.RawLog).
+			Msg("Transaction execution failed")
+		return fmt.Errorf("tx %s failed with code %d: %s", txHash, txResp.Code, txResp.RawLog)
+	}
+
+	v.logger.Info().
+		Str("tx_hash", txHash).
+		Uint64("height", uint64(txResp.Height)).
+		Uint64("gas_used", uint64(txResp.GasUsed)).
+		Msg("Transaction executed successfully")
+	return nil
 }
 
 // fetchPrices retrieves current prices from price server
@@ -315,7 +447,16 @@ func (v *Voter) fetchPrices(ctx context.Context) (map[string]decimal.Decimal, er
 	return priceMap, nil
 }
 
-// convertToOraclePrices converts price map to oracle.Price slice and filters by whitelist
+// convertToOraclePrices converts price map to oracle.Price slice and filters by whitelist.
+// CRITICAL: Oracle expects exchange rates in terms of LUNC, not USD!
+// Format: "How many of this currency equals 1 LUNC"
+// 
+// Price server gives us Fiat/USD rates (e.g., AUD/USD = 0.649 means 1 AUD = 0.649 USD)
+// We need to convert to Fiat/LUNC (how many fiat per 1 LUNC)
+// 
+// Formula: fiat_per_lunc = (1 / fiat_per_usd) × lunc_per_usd
+// Example: If AUD/USD = 0.649 and LUNC/USD = 0.00004122
+//          Then AUD/LUNC = (1 / 0.649) × 0.00004122 = 1.54 × 0.00004122 = 0.0000634
 func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whitelist []string) []oracle.Price {
 	// Create set of whitelisted denoms for fast lookup
 	whitelistSet := make(map[string]bool)
@@ -323,20 +464,117 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 		whitelistSet[denom] = true
 	}
 
-	var result []oracle.Price
-	for symbol, price := range prices {
-		// Try to extract denom from symbol (e.g., "BTC/USD" -> "BTC" -> "ubtc")
-		// For now, use simple conversion
-		denom := symbolToDenom(symbol)
-
-		if whitelistSet[denom] {
-			priceFloat, _ := price.Float64()
-			result = append(result, oracle.Price{
-				Denom: denom,
-				Price: priceFloat,
-			})
+	// Get LUNC/USD price for conversion
+	luncUSD, hasLuncUSD := prices["LUNC/USD"]
+	if !hasLuncUSD {
+		if p, ok := prices["LUNC"]; ok {
+			luncUSD = p
+			hasLuncUSD = true
 		}
 	}
+
+	if !hasLuncUSD {
+		v.logger.Error().Msg("LUNC/USD price not found - cannot convert fiat prices to LUNC terms")
+		return nil
+	}
+
+	luncUSDFloat, _ := luncUSD.Float64()
+	v.logger.Debug().
+		Float64("lunc_usd", luncUSDFloat).
+		Msg("Using LUNC/USD price for fiat conversions")
+
+	var result []oracle.Price
+	var conversions []string
+	var filtered []string
+
+	// Track which whitelisted denoms we've found
+	foundDenoms := make(map[string]bool)
+
+	for symbol, price := range prices {
+		denom := symbolToDenom(symbol)
+
+		// Skip LUNC itself - we'll handle it separately
+		if symbol == "LUNC/USD" || symbol == "LUNC" {
+			continue
+		}
+
+		if !whitelistSet[denom] {
+			filtered = append(filtered, fmt.Sprintf("%s(%s)", symbol, denom))
+			continue
+		}
+
+		// Convert fiat/USD to fiat/LUNC
+		// Price server gives us: Fiat/USD (e.g., AUD/USD = 0.649 means 1 AUD = 0.649 USD)
+		// We need: Fiat/LUNC (how many fiat per 1 LUNC)
+		// Formula: fiat_per_lunc = (1 / fiat_per_usd) * lunc_per_usd
+		//        = (usd_per_fiat) * (lunc/usd)
+		// Example: If AUD/USD = 0.649 and LUNC/USD = 0.00004122
+		//          Then AUD/LUNC = (1 / 0.649) * 0.00004122 = 1.54 * 0.00004122 = 0.0000634
+		priceFloat, _ := price.Float64()
+		if priceFloat == 0 {
+			v.logger.Warn().Str("symbol", symbol).Msg("Zero price for symbol, skipping")
+			continue
+		}
+		
+		usdPerFiat := 1.0 / priceFloat  // Invert: USD/Fiat
+		fiatPerLunc := usdPerFiat * luncUSDFloat  // USD/Fiat × LUNC/USD = Fiat/LUNC
+
+		result = append(result, oracle.Price{
+			Denom: denom,
+			Price: fiatPerLunc,
+		})
+		foundDenoms[denom] = true
+		conversions = append(conversions, fmt.Sprintf("%s->%s: (1/%.6f) * %.8f = %.10f",
+			symbol, denom, priceFloat, luncUSDFloat, fiatPerLunc))
+	}
+
+	// Special handling: Add uusd (USD/LUNC rate)
+	if whitelistSet["uusd"] && !foundDenoms["uusd"] {
+		result = append(result, oracle.Price{
+			Denom: "uusd",
+			Price: luncUSDFloat,
+		})
+		foundDenoms["uusd"] = true
+		conversions = append(conversions, fmt.Sprintf("LUNC/USD->uusd: %.8f", luncUSDFloat))
+		v.logger.Debug().
+			Float64("uusd", luncUSDFloat).
+			Msg("Added uusd (LUNC/USD price)")
+	}
+
+	// Special handling: Ensure UST (USTC/USD) is included if in whitelist
+	// This should already be handled by symbolToDenom("USTC/USD") -> "UST"
+	// but we log it for visibility
+	if whitelistSet["UST"] && foundDenoms["UST"] {
+		v.logger.Debug().Msg("UST (USTC/USD price) included in vote")
+	}
+
+	// Add abstain votes (0.0) for missing whitelisted denoms
+	// This allows validators to participate even when some prices are unavailable
+	// Following old TypeScript feeder behavior: missing denoms get price "0.000000"
+	var abstainDenoms []string
+	for _, denom := range whitelist {
+		if !foundDenoms[denom] && denom != "UST" { // Skip UST meta-denom check
+			result = append(result, oracle.Price{
+				Denom: denom,
+				Price: 0.0, // Abstain vote
+			})
+			abstainDenoms = append(abstainDenoms, denom)
+		}
+	}
+
+	if len(abstainDenoms) > 0 {
+		v.logger.Info().
+			Strs("denoms", abstainDenoms).
+			Msg("Added abstain votes (0.0) for missing whitelisted denoms")
+	} else if whitelistSet["UST"] && !foundDenoms["UST"] {
+		v.logger.Warn().Msg("UST in whitelist but USTC/USD price not found")
+	}
+
+	v.logger.Debug().
+		Strs("conversions", conversions).
+		Strs("filtered_out", filtered).
+		Int("matched", len(result)).
+		Msg("Price to denom conversion complete")
 
 	return result
 }

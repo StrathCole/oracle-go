@@ -32,7 +32,7 @@ func NewMedianAggregator(logger *logging.Logger) *MedianAggregator {
 }
 
 // Aggregate computes median prices from multiple sources with outlier detection
-func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price) (map[string]sources.Price, error) {
+func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price, sourceWeights map[string]float64) (map[string]sources.Price, error) {
 	start := time.Now()
 	defer func() {
 		metrics.RecordAggregation("median", time.Since(start))
@@ -45,12 +45,19 @@ func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.
 	// Collect all prices by NORMALIZED symbol to handle USDT/USD/USDC aliases
 	pricesBySymbol := make(map[string][]priceWithSource)
 	for sourceName, prices := range sourcePrices {
+		// Get weight for this source (default to 1.0 if not specified)
+		weight := 1.0
+		if w, ok := sourceWeights[sourceName]; ok {
+			weight = w
+		}
+		
 		for originalSymbol, price := range prices {
 			// Normalize the symbol (e.g., LUNC/USDT -> LUNC/USD)
 			normalizedSymbol := sources.NormalizeSymbol(originalSymbol)
 			pricesBySymbol[normalizedSymbol] = append(pricesBySymbol[normalizedSymbol], priceWithSource{
 				price:  price,
 				source: sourceName,
+				weight: weight,
 			})
 		}
 	}
@@ -141,7 +148,8 @@ func (a *MedianAggregator) computeMedianWithOutlierRejection(symbol string, pric
 	}, nil
 }
 
-// median computes the median of a sorted price list
+// median computes the weighted median of a sorted price list
+// For weighted median: find the price where cumulative weight reaches 50% of total weight
 func (a *MedianAggregator) median(prices []priceWithSource) decimal.Decimal {
 	n := len(prices)
 	if n == 0 {
@@ -152,19 +160,37 @@ func (a *MedianAggregator) median(prices []priceWithSource) decimal.Decimal {
 		return prices[0].price.Price
 	}
 
-	// Even number: average of two middle values
-	if n%2 == 0 {
-		mid1 := prices[n/2-1].price.Price
-		mid2 := prices[n/2].price.Price
-		return mid1.Add(mid2).Div(decimal.NewFromInt(2))
+	// Calculate total weight
+	totalWeight := 0.0
+	for _, p := range prices {
+		totalWeight += p.weight
 	}
 
-	// Odd number: middle value
+	// Find weighted median (price where cumulative weight reaches 50%)
+	targetWeight := totalWeight / 2.0
+	cumulativeWeight := 0.0
+	
+	for i, p := range prices {
+		cumulativeWeight += p.weight
+		
+		// If we've reached or passed the 50% mark
+		if cumulativeWeight >= targetWeight {
+			// If exactly at 50% and there's a next price, average them
+			if cumulativeWeight == targetWeight && i+1 < n {
+				return p.price.Price.Add(prices[i+1].price.Price).Div(decimal.NewFromInt(2))
+			}
+			// Otherwise return this price
+			return p.price.Price
+		}
+	}
+
+	// Fallback (shouldn't reach here)
 	return prices[n/2].price.Price
 }
 
-// priceWithSource tracks which source provided a price
+// priceWithSource tracks which source provided a price and its weight
 type priceWithSource struct {
 	price  sources.Price
 	source string
+	weight float64 // Weight for aggregation (1.0 = standard, 0.5 = half weight, etc.)
 }

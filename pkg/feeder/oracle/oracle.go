@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -44,9 +45,17 @@ func NewPrevote(prices []Price, validator sdk.ValAddress, feeder sdk.AccAddress,
 		return nil, fmt.Errorf("no prices provided")
 	}
 
+	// Sort prices by denom to ensure deterministic order
+	// This is critical for hash verification - the order must be consistent
+	sortedPrices := make([]Price, len(prices))
+	copy(sortedPrices, prices)
+	sort.Slice(sortedPrices, func(i, j int) bool {
+		return sortedPrices[i].Denom < sortedPrices[j].Denom
+	})
+
 	// Build exchange rate tuples string
-	voteParts := make([]string, len(prices))
-	for i, price := range prices {
+	voteParts := make([]string, len(sortedPrices))
+	for i, price := range sortedPrices {
 		// Format: convert price to Dec-compatible string
 		priceStr := float64ToDec(price.Price)
 
@@ -70,11 +79,12 @@ func NewPrevote(prices []Price, validator sdk.ValAddress, feeder sdk.AccAddress,
 	// Compute hash: SHA256("{salt}:{vote}:{validator}")
 	hash := oracletypes.GetAggregateVoteHash(salt, voteStr, validator)
 
-	logger.Debug().
+	logger.Info().
 		Str("salt", salt).
 		Str("vote", voteStr).
 		Str("hash", hash.String()).
 		Str("validator", validator.String()).
+		Int("num_prices", len(sortedPrices)).
 		Msg("Created prevote")
 
 	return &Prevote{

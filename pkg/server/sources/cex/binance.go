@@ -4,31 +4,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/shopspring/decimal"
 	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
+	ws "tc.com/oracle-prices/pkg/server/sources/websocket"
 )
 
 const (
-	binanceWSURL          = "wss://stream.binance.com:9443"
-	binancePingInterval   = 3 * time.Minute
-	binanceReconnectDelay = 5 * time.Second
-	binanceMaxReconnect   = 10
+	binanceBaseURL  = "https://api.binance.com"
+	binanceWSURL    = "wss://stream.binance.com:9443/stream"
+	binanceTimeout  = 10 * time.Second
+	binancePollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// BinanceSource fetches prices from Binance WebSocket API
+// BinanceSource fetches prices from Binance (supports both REST and WebSocket)
 type BinanceSource struct {
 	*sources.BaseSource
-	wsURL         string
-	conn          *websocket.Conn
-	connMu        sync.Mutex
-	reconnectChan chan struct{}
+	useWebSocket bool
+	apiURL       string
+	wsURL        string
+	wsClient     *ws.Client
+}
+
+// BinancePriceTicker represents lightweight price data from /ticker/price endpoint
+type BinancePriceTicker struct {
+	Symbol string `json:"symbol"` // e.g., "LUNCUSDT"
+	Price  string `json:"price"`  // Current price
 }
 
 // BinanceKlineMessage represents Binance kline WebSocket message
@@ -65,12 +71,25 @@ type BinanceKlineMessage struct {
 	} `json:"data"`
 }
 
-// NewBinanceSource creates a new Binance WebSocket source
+// NewBinanceSource creates a new Binance source (REST or WebSocket based on config)
 func NewBinanceSource(config map[string]interface{}) (sources.Source, error) {
+	logger, _ := logging.Init("info", "text", "stdout")
+
 	// Parse pair mappings from config
 	pairs, err := sources.ParsePairsFromMap(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse pairs: %w", err)
+	}
+
+	// Check if WebSocket is enabled
+	useWebSocket := true // Default to WebSocket for backward compatibility
+	if useWS, ok := config["use_websocket"].(bool); ok {
+		useWebSocket = useWS
+	}
+
+	apiURL := binanceBaseURL
+	if url, ok := config["api_url"].(string); ok && url != "" {
+		apiURL = url
 	}
 
 	wsURL := binanceWSURL
@@ -78,14 +97,32 @@ func NewBinanceSource(config map[string]interface{}) (sources.Source, error) {
 		wsURL = url
 	}
 
-	logger, _ := logging.Init("info", "text", "stdout")
 	base := sources.NewBaseSource("binance", sources.SourceTypeCEX, pairs, logger)
 
-	return &BinanceSource{
-		BaseSource:    base,
-		wsURL:         wsURL,
-		reconnectChan: make(chan struct{}),
-	}, nil
+	source := &BinanceSource{
+		BaseSource:   base,
+		useWebSocket: useWebSocket,
+		apiURL:       apiURL,
+		wsURL:        wsURL,
+	}
+
+	// Initialize WebSocket client if enabled
+	if useWebSocket {
+		source.wsClient = ws.NewClient(ws.Config{
+			URL:    source.buildWebSocketURL(),
+			Logger: logger.ZerologLogger(),
+		})
+		source.wsClient.SetHandlers(
+			source.handleWSMessage,
+			source.handleWSConnect,
+			source.handleWSDisconnect,
+		)
+		logger.Info("Binance WebSocket mode enabled")
+	} else {
+		logger.Info("Binance REST mode enabled")
+	}
+
+	return source, nil
 }
 
 // Initialize prepares the source for operation
@@ -94,34 +131,42 @@ func (s *BinanceSource) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices (REST or WebSocket based on configuration)
 func (s *BinanceSource) Start(ctx context.Context) error {
-	s.Logger().Info("Starting Binance source")
-	go s.connectAndListen(ctx)
+	// Do initial REST fetch to have prices immediately
+	s.Logger().Info("Performing initial price fetch")
+	if err := s.fetchPrices(ctx); err != nil {
+		s.Logger().Warn("Initial fetch failed", "error", err.Error())
+	}
+
+	if s.useWebSocket {
+		s.Logger().Info("Starting Binance source (WebSocket mode)")
+		return s.startWebSocket(ctx)
+	}
+
+	s.Logger().Info("Starting Binance source (REST mode)")
+
+	// Start polling loop
+	go s.pollLoop(ctx)
+
 	return nil
 }
 
 // Stop halts the source and cleans up resources
 func (s *BinanceSource) Stop() error {
 	s.Logger().Info("Stopping Binance source")
-	s.Close()
 
-	s.connMu.Lock()
-	if s.conn != nil {
-		s.conn.Close()
+	if s.wsClient != nil {
+		s.wsClient.Close()
 	}
-	s.connMu.Unlock()
 
+	s.Close()
 	return nil
 }
 
-// GetPrices returns the current prices for all symbols
+// GetPrices returns the latest prices
 func (s *BinanceSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
-	prices := s.GetAllPrices()
-	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
-	}
-	return prices, nil
+	return s.GetAllPrices(), nil
 }
 
 // Subscribe allows other components to receive price updates
@@ -130,9 +175,12 @@ func (s *BinanceSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	return nil
 }
 
-// connectAndListen manages WebSocket connection with auto-reconnect
-func (s *BinanceSource) connectAndListen(ctx context.Context) {
-	reconnectAttempts := 0
+// REST mode implementation
+
+// pollLoop continuously fetches prices at the configured interval
+func (s *BinanceSource) pollLoop(ctx context.Context) {
+	ticker := time.NewTicker(binancePollRate)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -140,164 +188,149 @@ func (s *BinanceSource) connectAndListen(ctx context.Context) {
 			return
 		case <-s.StopChan():
 			return
-		default:
-		}
-
-		// Connect to WebSocket
-		if err := s.connect(); err != nil {
-			s.Logger().Error("Failed to connect to Binance WebSocket", "error", err, "attempt", reconnectAttempts)
-			s.SetHealthy(false)
-
-			reconnectAttempts++
-			if reconnectAttempts >= binanceMaxReconnect {
-				s.Logger().Error("Max reconnect attempts reached, giving up")
-				return
+		case <-ticker.C:
+			if err := s.fetchPrices(ctx); err != nil {
+				s.Logger().Error("Failed to fetch prices", "error", err)
+				s.SetHealthy(false)
+			} else {
+				s.SetHealthy(true)
 			}
-
-			// Exponential backoff
-			delay := time.Duration(reconnectAttempts) * binanceReconnectDelay
-			if delay > 2*time.Minute {
-				delay = 2 * time.Minute
-			}
-
-			select {
-			case <-time.After(delay):
-				continue
-			case <-ctx.Done():
-				return
-			case <-s.StopChan():
-				return
-			}
-		}
-
-		// Reset reconnect attempts on successful connection
-		reconnectAttempts = 0
-		s.SetHealthy(true)
-
-		// Listen for messages
-		if err := s.listen(ctx); err != nil {
-			s.Logger().Warn("WebSocket listener stopped", "error", err)
-			s.SetHealthy(false)
-		}
-
-		// Close connection before reconnecting
-		s.connMu.Lock()
-		if s.conn != nil {
-			s.conn.Close()
-			s.conn = nil
-		}
-		s.connMu.Unlock()
-
-		// Wait before reconnecting
-		select {
-		case <-time.After(binanceReconnectDelay):
-		case <-ctx.Done():
-			return
-		case <-s.StopChan():
-			return
 		}
 	}
 }
 
-// connect establishes WebSocket connection and subscribes to streams
-func (s *BinanceSource) connect() error {
-	// Build stream names for all pairs
-	streams := make([]string, 0, len(s.Symbols()))
-	for unifiedSymbol, sourceSymbol := range s.GetAllPairs() {
-		// Binance expects lowercase symbols
-		binanceSymbol := strings.ToLower(sourceSymbol)
-		streams = append(streams, binanceSymbol+"@kline_5m")
-		s.Logger().Debug("Subscribing to Binance stream", "unified", unifiedSymbol, "binance", binanceSymbol)
-	}
-
-	// Connect to combined stream
-	url := s.wsURL + "/stream?streams=" + strings.Join(streams, "/")
-
-	s.Logger().Info("Connecting to Binance WebSocket", "url", url)
-
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+// fetchPrices retrieves current prices from REST API
+func (s *BinanceSource) fetchPrices(ctx context.Context) error {
+	// Build the full endpoint URL
+	url := s.apiURL + "/api/v3/ticker/price"
+	
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to dial %s: %w", url, err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	s.connMu.Lock()
-	s.conn = conn
-	s.connMu.Unlock()
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch prices: %w", err)
+	}
+	defer resp.Body.Close()
 
-	s.Logger().Info("Connected to Binance WebSocket")
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var tickers []BinancePriceTicker
+	if err := json.Unmarshal(body, &tickers); err != nil {
+		return fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	// Process each ticker
+	for _, ticker := range tickers {
+		// Normalize symbol to lowercase for matching
+		sourceSymbol := strings.ToUpper(ticker.Symbol)
+
+		// Find unified symbol
+		unifiedSymbol := s.GetUnifiedSymbol(sourceSymbol)
+		if unifiedSymbol == "" {
+			continue // Not a symbol we're tracking
+		}
+
+		// Parse price
+		priceDecimal, err := decimal.NewFromString(ticker.Price)
+		if err != nil {
+			s.Logger().Warn("Failed to parse price", "symbol", sourceSymbol, "price", ticker.Price, "error", err)
+			continue
+		}
+
+		// Update price (automatically records metrics)
+		now := time.Now()
+		s.SetPrice(unifiedSymbol, priceDecimal, now)
+		s.SetLastUpdate(now)
+	}
 
 	return nil
 }
 
-// listen reads messages from WebSocket
-func (s *BinanceSource) listen(ctx context.Context) error {
-	// Start ping goroutine to keep connection alive
-	pingTicker := time.NewTicker(binancePingInterval)
-	defer pingTicker.Stop()
+// WebSocket mode implementation
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.StopChan():
-				return
-			case <-pingTicker.C:
-				s.connMu.Lock()
-				if s.conn != nil {
-					if err := s.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-						s.Logger().Warn("Failed to send ping", "error", err)
-					}
-				}
-				s.connMu.Unlock()
-			}
-		}
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-s.StopChan():
-			return nil
-		default:
-		}
-
-		s.connMu.Lock()
-		conn := s.conn
-		s.connMu.Unlock()
-
-		if conn == nil {
-			return fmt.Errorf("connection is nil")
-		}
-
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			return fmt.Errorf("failed to read message: %w", err)
-		}
-
-		if err := s.processMessage(message); err != nil {
-			s.Logger().Warn("Failed to process message", "error", err)
-		}
+// startWebSocket initializes and starts WebSocket connection
+func (s *BinanceSource) startWebSocket(ctx context.Context) error {
+	if err := s.wsClient.ConnectWithRetry(ctx); err != nil {
+		return fmt.Errorf("failed to connect WebSocket: %w", err)
 	}
+
+	// Subscribe to price streams
+	if err := s.subscribeToTickers(); err != nil {
+		return fmt.Errorf("failed to subscribe: %w", err)
+	}
+
+	return nil
 }
 
-// processMessage parses and stores price updates
-func (s *BinanceSource) processMessage(message []byte) error {
+// buildWebSocketURL creates the WebSocket URL with all symbol streams
+func (s *BinanceSource) buildWebSocketURL() string {
+	// Build stream names for all pairs
+	streams := make([]string, 0, len(s.Symbols()))
+	for _, sourceSymbol := range s.GetAllPairs() {
+		// Binance expects lowercase symbols for streams
+		binanceSymbol := strings.ToLower(sourceSymbol)
+		streams = append(streams, binanceSymbol+"@kline_5m")
+	}
+
+	// Binance combined stream format
+	return s.wsURL + "/stream?streams=" + strings.Join(streams, "/")
+}
+
+// subscribeToTickers subscribes to all configured ticker streams
+// For Binance, subscription is done via URL parameters, so this is a no-op
+func (s *BinanceSource) subscribeToTickers() error {
+	s.Logger().Info("Binance streams subscribed via URL parameters")
+	return nil
+}
+
+// handleWSMessage processes incoming WebSocket messages
+func (s *BinanceSource) handleWSMessage(message []byte) {
 	// Binance combined stream format: {"stream":"...", "data":{...}}
 	var klineMsg BinanceKlineMessage
 	if err := json.Unmarshal(message, &klineMsg); err != nil {
-		return fmt.Errorf("failed to unmarshal kline message: %w", err)
+		s.Logger().Warn("Failed to unmarshal kline message", "error", err)
+		return
 	}
 
-	return s.processKline(&klineMsg)
+	// Process kline data
+	if err := s.processKline(&klineMsg); err != nil {
+		s.Logger().Warn("Failed to process kline", "error", err)
+	}
+}
+
+// handleWSConnect is called when WebSocket connection is established
+func (s *BinanceSource) handleWSConnect() {
+	s.Logger().Info("Binance WebSocket connected")
+	s.SetHealthy(true)
+
+	// Resubscribe to tickers (though for Binance this is a no-op since subscription is via URL)
+	if err := s.subscribeToTickers(); err != nil {
+		s.Logger().Error("Failed to resubscribe to tickers", "error", err)
+	}
+}
+
+// handleWSDisconnect is called when WebSocket connection is lost
+func (s *BinanceSource) handleWSDisconnect(err error) {
+	s.Logger().Warn("Binance WebSocket disconnected", "error", err)
+	s.SetHealthy(false)
 }
 
 // processKline updates price for a symbol from kline data
 func (s *BinanceSource) processKline(msg *BinanceKlineMessage) error {
 	// Find unified symbol for this Binance symbol
 	binanceSymbol := strings.ToLower(msg.Data.Symbol)
-	
+
 	// Get unified symbol from the source-specific symbol
 	unifiedSymbol := s.GetUnifiedSymbol(binanceSymbol)
 	if unifiedSymbol == "" {
@@ -322,15 +355,12 @@ func (s *BinanceSource) processKline(msg *BinanceKlineMessage) error {
 		}
 	}
 
-	// Update price using BaseSource
+	// Update price using BaseSource (automatically records metrics)
 	now := time.Now()
 	s.SetPrice(unifiedSymbol, priceDecimal, now)
 	s.SetLastUpdate(now)
 
-	// Record metrics
-	metrics.RecordSourceUpdate(s.Name(), unifiedSymbol)
-
-	s.Logger().Debug("Updated price from Binance",
+	s.Logger().Debug("Updated price from Binance kline",
 		"symbol", unifiedSymbol,
 		"price", priceDecimal.String(),
 		"volume", volumeDecimal.String())

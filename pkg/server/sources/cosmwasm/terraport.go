@@ -14,7 +14,7 @@ import (
 
 const (
 	terraportQueryTimeout   = 10 * time.Second
-	terraportUpdateInterval = 30 * time.Second
+	terraportUpdateInterval = 15 * time.Second
 )
 
 // TerraportSource fetches prices from Terraport DEX pairs via gRPC smart contract queries

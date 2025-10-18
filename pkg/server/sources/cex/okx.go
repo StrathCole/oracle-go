@@ -17,7 +17,7 @@ import (
 
 const (
 	okxAPIURL   = "https://www.okx.com/api/v5/market/tickers"
-	okxPollRate = 60 * time.Second
+	okxPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
 // OKXSource fetches prices from OKX (OKEX) REST API
@@ -129,7 +129,7 @@ func (s *OKXSource) pollLoop(ctx context.Context) {
 				return s.fetchPrices(ctx)
 			})
 			if err != nil {
-				s.Logger().Error("Failed to fetch prices after retries", "error", err)
+				s.Logger().Error("Failed to fetch prices after retries", "error", err.Error())
 				s.SetHealthy(false)
 			} else {
 				s.SetHealthy(true)

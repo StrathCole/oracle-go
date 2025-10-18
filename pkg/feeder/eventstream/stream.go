@@ -24,10 +24,23 @@ type Stream struct {
 	paramsCh      chan Params
 	closeCh       chan struct{}
 	currentParams *Params
+	
+	// Failover support
+	rpcEndpoints  []string
+	currentRPC    int
 }
 
-// NewStream creates a new event stream
+// NewStream creates a new event stream with failover support
 func NewStream(tendermintRPC string, client *client.Client, logger zerolog.Logger) (*Stream, error) {
+	return NewStreamWithFailover([]string{tendermintRPC}, client, logger)
+}
+
+// NewStreamWithFailover creates a new event stream with multiple RPC endpoints for failover
+func NewStreamWithFailover(rpcEndpoints []string, client *client.Client, logger zerolog.Logger) (*Stream, error) {
+	if len(rpcEndpoints) == 0 {
+		return nil, fmt.Errorf("at least one RPC endpoint required")
+	}
+	
 	// Create subscription message for NewBlock events
 	subscribeMsg := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -38,16 +51,28 @@ func NewStream(tendermintRPC string, client *client.Client, logger zerolog.Logge
 		},
 	}
 
-	ws := NewWebsocket(tendermintRPC, subscribeMsg, logger)
+	primaryRPC := rpcEndpoints[0]
+	ws := NewWebsocket(primaryRPC, subscribeMsg, logger)
 
-	return &Stream{
+	stream := &Stream{
 		logger:       logger.With().Str("component", "eventstream").Logger(),
 		websocket:    ws,
 		client:       client,
 		votePeriodCh: make(chan VotingPeriod, 10),
 		paramsCh:     make(chan Params, 10),
 		closeCh:      make(chan struct{}),
-	}, nil
+		rpcEndpoints: rpcEndpoints,
+		currentRPC:   0,
+	}
+	
+	if len(rpcEndpoints) > 1 {
+		stream.logger.Info().
+			Int("endpoints", len(rpcEndpoints)).
+			Str("primary", primaryRPC).
+			Msg("Event stream initialized with failover support")
+	}
+	
+	return stream, nil
 }
 
 // Start begins the event stream loops

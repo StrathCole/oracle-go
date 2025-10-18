@@ -13,4 +13,8 @@ func init() {
 	sources.Register("cex.gateio", NewGateioSource)
 	sources.Register("cex.okx", NewOKXSource)
 	sources.Register("cex.coinmarketcap", NewCoinMarketCapSource)
+	sources.Register("cex.huobi", NewHuobiSource)
+	sources.Register("cex.kraken", NewKrakenSource)
+	sources.Register("cex.kucoin", NewKucoinSource)
+	sources.Register("cex.mexc", NewMEXCSource)
 }

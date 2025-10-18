@@ -14,7 +14,7 @@ import (
 
 const (
 	garudaQueryTimeout   = 10 * time.Second
-	garudaUpdateInterval = 30 * time.Second
+	garudaUpdateInterval = 15 * time.Second
 )
 
 // GarudaSource fetches prices from Garuda DeFi DEX pairs via gRPC smart contract queries
@@ -181,7 +181,7 @@ func (s *GarudaSource) fetchPrices(ctx context.Context) error {
 			s.Logger().Error("Failed to fetch pair price",
 				"pair", pair.Symbol,
 				"contract", pair.ContractAddress,
-				"error", fmt.Sprintf("%v", err))  // Force string formatting of error
+				"error", fmt.Sprintf("%v", err)) // Force string formatting of error
 			continue
 		}
 
@@ -261,8 +261,8 @@ func (s *GarudaSource) fetchPairPrice(ctx context.Context, pair GarudaPair) (dec
 	// Note: Garuda uses reserve1/reserve2, need to determine which is which based on asset denoms
 	// For LUNC/USDC pair: asset2 is uluna (LUNC), asset1 is USDC
 	// So reserve2 is LUNC amount, reserve1 is USDC amount
-	reserve2 := amount2.Div(decimal.NewFromInt(10).Pow(decimals0))  // LUNC
-	reserve1 := amount1.Div(decimal.NewFromInt(10).Pow(decimals1))  // USDC
+	reserve2 := amount2.Div(decimal.NewFromInt(10).Pow(decimals0)) // LUNC
+	reserve1 := amount1.Div(decimal.NewFromInt(10).Pow(decimals1)) // USDC
 
 	// Price = USDC / LUNC (quote asset per base asset)
 	if reserve2.IsZero() {

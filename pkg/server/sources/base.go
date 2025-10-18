@@ -9,6 +9,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"tc.com/oracle-prices/pkg/logging"
+	"tc.com/oracle-prices/pkg/metrics"
 )
 
 const (
@@ -144,6 +145,9 @@ func (b *BaseSource) SetPrice(symbol string, price decimal.Decimal, timestamp ti
 	}
 	b.prices[symbol] = p
 	b.pricesMu.Unlock()
+
+	// Record metric
+	metrics.RecordSourceUpdate(b.name, symbol)
 
 	// Notify subscribers
 	pricesMap := map[string]Price{

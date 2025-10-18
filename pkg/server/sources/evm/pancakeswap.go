@@ -14,21 +14,22 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/shopspring/decimal"
 	"tc.com/oracle-prices/pkg/logging"
+	"tc.com/oracle-prices/pkg/metrics"
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
 // PancakeSwapSource implements price fetching from PancakeSwap V2 pairs on BSC
 type PancakeSwapSource struct {
 	sources.BaseSource
-	client        *ethclient.Client
-	rpcURL        string
-	chainID       uint64
-	pairs         []PairConfig
-	prices        map[string]sources.Price
-	mu            sync.RWMutex
-	updateTicker  *time.Ticker
-	stopChan      chan struct{}
-	pairABI       abi.ABI
+	client       *ethclient.Client
+	rpcURL       string
+	chainID      uint64
+	pairs        []PairConfig
+	prices       map[string]sources.Price
+	mu           sync.RWMutex
+	updateTicker *time.Ticker
+	stopChan     chan struct{}
+	pairABI      abi.ABI
 }
 
 // PairConfig holds configuration for a trading pair
@@ -172,8 +173,8 @@ func (s *PancakeSwapSource) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to fetch initial prices: %w", err)
 	}
 
-	// Start update ticker (30 seconds)
-	s.updateTicker = time.NewTicker(30 * time.Second)
+	// Start update ticker (15 seconds)
+	s.updateTicker = time.NewTicker(15 * time.Second)
 
 	go func() {
 		for {
@@ -261,6 +262,11 @@ func (s *PancakeSwapSource) fetchPrices(ctx context.Context) error {
 	s.prices = newPrices
 	s.SetLastUpdate(time.Now())
 	s.mu.Unlock()
+
+	// Record metrics for all updated prices
+	for symbol := range newPrices {
+		metrics.RecordSourceUpdate(s.Name(), symbol)
+	}
 
 	return nil
 }

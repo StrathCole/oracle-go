@@ -76,7 +76,7 @@ func NewFixerSource(config map[string]interface{}) (sources.Source, error) {
 		timeout = time.Duration(t) * time.Millisecond
 	}
 
-	interval := 60 * time.Second
+	interval := 15 * time.Second // Update every 15s (vote period is 30s)
 	if i, ok := config["interval"].(int); ok {
 		interval = time.Duration(i) * time.Millisecond
 	}
