@@ -418,15 +418,6 @@ make fmt && make lint && make test
 
 ---
 
-## �� Additional Documentation
-
-- **[oracle-rework.md](oracle-rework.md)** - Implementation plan (13 phases, 18 weeks)
-- **[.github/copilot-instructions.md](.github/copilot-instructions.md)** - Architecture & development guide
-- **[config/config.yaml](config/config.yaml)** - Complete configuration reference
-- **[EVENTSTREAM_IMPLEMENTATION.md](EVENTSTREAM_IMPLEMENTATION.md)** - Event-driven architecture
-
----
-
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -435,15 +426,8 @@ make fmt && make lint && make test
 4. Push: `git push origin feature/amazing-feature`
 5. Open Pull Request
 
-See [oracle-rework.md](oracle-rework.md) for planned features.
-
 ---
 
 ## 📄 License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
-
-**Questions?** Check [.github/copilot-instructions.md](.github/copilot-instructions.md) for detailed
-architecture and development guidance.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
