@@ -324,7 +324,7 @@ feeder:
 or
 
 ```bash
-./build/oracle-go --feeder --dry-run
+./build/oracle-go --feeder --dry-run --verify
 ```
 
 This will:
