@@ -28,9 +28,14 @@ install:
 	@echo "Installing $(BINARY_NAME)..."
 	$(GO) install $(LDFLAGS) ./$(CMD_DIR)
 
-## test: Run all tests
+## test: Run unit tests (short mode - no network)
 test:
-	@echo "Running tests..."
+	@echo "Running unit tests..."
+	$(GO) test -v -race -short -coverprofile=coverage.out ./...
+
+## test-integration: Run all tests including integration tests (requires network)
+test-integration:
+	@echo "Running all tests including integration tests..."
 	$(GO) test -v -race -coverprofile=coverage.out ./...
 
 ## test-coverage: Run tests with coverage report
