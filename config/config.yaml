@@ -55,7 +55,7 @@ feeder:
   
   # Validator addresses to submit votes for
   validators:
-    - terravaloper1eutun6vh83lmyq0wmyf9vgghvurze2xanl9sq6  # Replace with your validator address
+    - terravaloper1xxxxxxxxx  # Replace with your validator address
   
   # Mnemonic for feeder account (use mnemonic_env for production!)
   mnemonic: ""  # Leave empty if using mnemonic_env
@@ -100,7 +100,6 @@ feeder:
 
 # Price Sources Configuration
 sources:
-  # CoinGecko (REST API) - Comprehensive coverage, fallback provider
   # CoinGecko (REST API) - Comprehensive coverage, fallback provider
   - type: cex
     name: coingecko
