@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/StrathCole/oracle-go/pkg/metrics"
@@ -183,14 +182,15 @@ func (s *GateioSource) fetchPrices(ctx context.Context) error {
 			continue
 		}
 
-		priceFloat, err := strconv.ParseFloat(ticker.Last, 64)
+		// Parse price directly from string to preserve full precision for small values like LUNC
+		price, err := decimal.NewFromString(ticker.Last)
 		if err != nil {
 			s.Logger().Warn("Failed to parse price", "symbol", ticker.CurrencyPair, "price", ticker.Last, "error", err)
 			continue
 		}
 
 		// Use BaseSource SetPrice
-		s.SetPrice(unifiedSymbol, decimal.NewFromFloat(priceFloat), now)
+		s.SetPrice(unifiedSymbol, price, now)
 		metrics.RecordSourceUpdate(s.Name(), unifiedSymbol)
 		updateCount++
 	}

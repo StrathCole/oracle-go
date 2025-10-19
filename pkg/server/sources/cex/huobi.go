@@ -27,14 +27,14 @@ type HuobiSource struct {
 
 // HuobiTicker represents a single ticker in the response.
 type HuobiTicker struct {
-	Symbol string  `json:"symbol"` // e.g., "btcusdt"
-	Open   float64 `json:"open"`
-	High   float64 `json:"high"`
-	Low    float64 `json:"low"`
-	Close  float64 `json:"close"`  // Last price
-	Amount float64 `json:"amount"` // Base currency volume
-	Vol    float64 `json:"vol"`    // Quote currency volume
-	Count  int     `json:"count"`  // Number of trades
+	Symbol string      `json:"symbol"` // e.g., "btcusdt"
+	Open   json.Number `json:"open"`
+	High   json.Number `json:"high"`
+	Low    json.Number `json:"low"`
+	Close  json.Number `json:"close"`  // Last price
+	Amount json.Number `json:"amount"` // Base currency volume
+	Vol    json.Number `json:"vol"`    // Quote currency volume
+	Count  int         `json:"count"`  // Number of trades
 }
 
 // HuobiResponse represents the API response.
@@ -194,13 +194,23 @@ func (s *HuobiSource) fetchPrices(ctx context.Context) error {
 			continue
 		}
 
-		// Use close price (last traded price)
-		if ticker.Close <= 0 {
+		// Parse price from json.Number to preserve full precision for small values like LUNC
+		price, err := decimal.NewFromString(ticker.Close.String())
+		if err != nil {
+			s.Logger().Warn("Failed to parse price", "symbol", ticker.Symbol, "price", ticker.Close.String(), "error", err)
 			continue
 		}
 
-		price := decimal.NewFromFloat(ticker.Close)
-		volume := decimal.NewFromFloat(ticker.Amount)
+		// Check for zero or negative price
+		if price.LessThanOrEqual(decimal.Zero) {
+			continue
+		}
+
+		// Parse volume
+		volume := decimal.Zero
+		if volumeVal, err := decimal.NewFromString(ticker.Amount.String()); err == nil {
+			volume = volumeVal
+		}
 
 		s.SetPrice(unifiedSymbol, price, now)
 		updateCount++

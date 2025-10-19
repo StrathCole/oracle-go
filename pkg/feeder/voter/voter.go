@@ -557,9 +557,8 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 		return nil
 	}
 
-	luncUSDFloat, _ := luncUSD.Float64()
 	v.logger.Debug().
-		Float64("lunc_usd", luncUSDFloat).
+		Str("lunc_usd", luncUSD.String()).
 		Msg("Using LUNC/USD price for fiat conversions")
 
 	// Pre-allocate result with approximately whitelist size
@@ -588,13 +587,12 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 			continue
 		}
 
-		priceFloat, _ := price.Float64()
-		if priceFloat == 0 {
+		if price.IsZero() {
 			v.logger.Warn().Str("symbol", symbol).Msg("Zero price for symbol, skipping")
 			continue
 		}
 
-		// Convert fiat/USD to fiat/LUNC
+		// Convert fiat/USD to fiat/LUNC using decimal.Decimal for precision
 		// Price server gives us: Fiat/USD (e.g., AUD/USD = 0.649 means 1 AUD = 0.649 USD)
 		// We need: Fiat/LUNC (how many fiat per 1 LUNC)
 		// Formula: fiat_per_lunc = (1 / fiat_per_usd) * lunc_per_usd
@@ -603,25 +601,31 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 		//          Then AUD/LUNC = (1 / 0.649) * 0.00004122 = 1.54 * 0.00004122 = 0.0000634
 		// Note: This applies to ALL fiat currencies including SDR
 
-		usdPerFiat := 1.0 / priceFloat           // Invert: USD/Fiat
-		fiatPerLunc := usdPerFiat * luncUSDFloat // USD/Fiat × LUNC/USD = Fiat/LUNC
+		// Use decimal arithmetic to preserve precision for small LUNC prices
+		one := decimal.NewFromInt(1)
+		usdPerFiat := one.Div(price)        // Invert: USD/Fiat
+		fiatPerLunc := usdPerFiat.Mul(luncUSD) // USD/Fiat × LUNC/USD = Fiat/LUNC
+
+		// Convert to float64 only at the final step for oracle.Price
+		fiatPerLuncFloat, _ := fiatPerLunc.Float64()
 
 		result = append(result, oracle.Price{
 			Denom: denom,
-			Price: fiatPerLunc,
+			Price: fiatPerLuncFloat,
 		})
 		foundDenoms[denom] = true
 	}
 
 	// Special handling: Add uusd (USD/LUNC rate)
 	if whitelistSet["uusd"] && !foundDenoms["uusd"] {
+		luncUSDFloat, _ := luncUSD.Float64()
 		result = append(result, oracle.Price{
 			Denom: "uusd",
 			Price: luncUSDFloat,
 		})
 		foundDenoms["uusd"] = true
 		v.logger.Debug().
-			Float64("uusd", luncUSDFloat).
+			Str("uusd", luncUSD.String()).
 			Msg("Added uusd (LUNC/USD price)")
 	}
 

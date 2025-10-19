@@ -196,8 +196,8 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 		ids = append(ids, id)
 	}
 
-	// Build API URL
-	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd",
+	// Build API URL with full precision (18 decimals) for accurate pricing of small-value coins like LUNC
+	url := fmt.Sprintf("%s/simple/price?ids=%s&vs_currencies=usd&precision=18",
 		coingeckoBaseURL,
 		strings.Join(ids, ","))
 
@@ -234,9 +234,12 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
-	// Parse response
-	var data map[string]map[string]float64
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	// Parse response preserving numeric precision
+	// Use json.Number instead of float64 to avoid precision loss for small prices like LUNC
+	var data map[string]map[string]json.Number
+	decoder := json.NewDecoder(resp.Body)
+	decoder.UseNumber() // Preserve numeric precision
+	if err := decoder.Decode(&data); err != nil {
 		return fmt.Errorf("failed to decode CoinGecko response: %w (URL: %s)", err, url)
 	}
 
@@ -249,7 +252,7 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	for coinGeckoID, priceData := range data {
 		s.Logger().Debug("Processing CoinGecko ID", "id", coinGeckoID, "priceData", priceData)
 
-		usdPrice, ok := priceData["usd"]
+		usdPriceNum, ok := priceData["usd"]
 		if !ok {
 			s.Logger().Warn("No USD price in response", "id", coinGeckoID, "priceData", priceData)
 			continue
@@ -262,10 +265,17 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 			continue
 		}
 
-		s.Logger().Debug("Setting price", "symbol", unifiedSymbol, "price", usdPrice)
+		// Parse price from json.Number to preserve full precision
+		usdPrice, err := decimal.NewFromString(usdPriceNum.String())
+		if err != nil {
+			s.Logger().Warn("Failed to parse price", "id", coinGeckoID, "price", usdPriceNum.String(), "error", err)
+			continue
+		}
+
+		s.Logger().Debug("Setting price", "symbol", unifiedSymbol, "price", usdPrice.String())
 
 		// Use BaseSource SetPrice
-		s.SetPrice(unifiedSymbol, decimal.NewFromFloat(usdPrice), updateTime)
+		s.SetPrice(unifiedSymbol, usdPrice, updateTime)
 		metrics.RecordSourceUpdate(s.Name(), unifiedSymbol)
 		updateCount++
 	}

@@ -18,8 +18,8 @@ server:
   # Cache TTL for price responses
   cache_ttl: 60s
   
-  # Aggregation method: "median" (default) or "average"
-  aggregate_mode: median
+  # Aggregation method: "median" or "average" (default)
+  aggregate_mode: average
 
 # Feeder Configuration (for submitting oracle votes)
 feeder:
@@ -921,7 +921,7 @@ metrics:
 # Logging Configuration
 logging:
   # Level: "debug", "info", "warn", "error"
-  level: info
+  level: debug
   
   # Format: "json" or "text"
   format: text

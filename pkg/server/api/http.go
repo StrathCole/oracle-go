@@ -131,12 +131,6 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 		metrics.RecordHTTPRequest(r.URL.Path, status, time.Since(start))
 	}()
 
-	// Check cache
-	if time.Since(s.cacheTime) < s.cacheTTL && len(s.lastCache) > 0 {
-		s.sendJSON(w, s.convertToArray(s.lastCache))
-		return
-	}
-
 	// Gather prices from all sources
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -157,7 +151,13 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 		sourcePrices[source.Name()] = prices
 	}
 
+	// If no new prices are available, fall back to cache if valid
 	if len(sourcePrices) == 0 {
+		if time.Since(s.cacheTime) < s.cacheTTL && len(s.lastCache) > 0 {
+			s.logger.Warn("No fresh prices available, serving from cache")
+			s.sendJSON(w, s.convertToArray(s.lastCache))
+			return
+		}
 		status = "503"
 		http.Error(w, "No prices available", http.StatusServiceUnavailable)
 		return
@@ -166,6 +166,12 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	// Aggregate prices using configured aggregator with source weights
 	aggregatedPrices, err := s.aggregator.Aggregate(sourcePrices, s.sourceWeights)
 	if err != nil {
+		// Fall back to cache on aggregation error if valid
+		if time.Since(s.cacheTime) < s.cacheTTL && len(s.lastCache) > 0 {
+			s.logger.Warn("Aggregation failed, serving from cache", "error", err)
+			s.sendJSON(w, s.convertToArray(s.lastCache))
+			return
+		}
 		status = "503"
 		s.logger.Error("Failed to aggregate prices", "error", err)
 		http.Error(w, "Failed to aggregate prices", http.StatusServiceUnavailable)
