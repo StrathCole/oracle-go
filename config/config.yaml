@@ -15,15 +15,7 @@ server:
       cert: ""
       key: ""
   
-  # WebSocket server for real-time price streaming
-  websocket:
-    enabled: true
-    addr: "127.0.0.1:8081"  # Bind to localhost by default for security
-    allowed_origins: []     # Empty = same-origin only (secure default)
-                            # ["*"] = allow all origins (not recommended for public)
-                            # ["https://example.com"] = specific origins allowlist
-  
-    # Cache TTL for price responses
+  # Cache TTL for price responses
   cache_ttl: 60s
   
   # Aggregation method: "median" (default) or "average"

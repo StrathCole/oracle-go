@@ -41,9 +41,8 @@ USER oracle:oracle
 
 # Expose ports
 # 8080: HTTP API (price server)
-# 8081: WebSocket API (price server)
 # 9091: Prometheus metrics
-EXPOSE 8080 8081 9091
+EXPOSE 8080 9091
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

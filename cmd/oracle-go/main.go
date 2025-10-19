@@ -284,30 +284,14 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	// Start HTTP server
 	server := api.NewServer(cfg.Server.HTTP.Addr, allSources, agg, sourceWeights, cfg.Server.CacheTTL.ToDuration(), cfg.Server.HTTP.TLS, logger)
 
-	// Start WebSocket server if enabled
-	var wsServer *api.WebSocketServer
-	if cfg.Server.WebSocket.Enabled {
-		wsServer = api.NewWebSocketServer(cfg.Server.WebSocket.Addr, cfg.Server.HTTP.TLS, cfg.Server.WebSocket.AllowedOrigins, logger)
-		server.SetWebSocketServer(wsServer)
-
-		go func() {
-			if err := wsServer.Start(ctx); err != nil {
-				logger.Error("WebSocket server error", "error", err)
-			}
-		}()
-	}
-
 	go func(ctx context.Context) {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		// Stop servers
+		// Stop HTTP server
 		if err := server.Stop(shutdownCtx); err != nil {
 			logger.Error("Failed to stop HTTP server", "error", err)
-		}
-		if wsServer != nil {
-			wsServer.Stop()
 		}
 
 		// Stop sources

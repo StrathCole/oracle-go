@@ -51,9 +51,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.HTTP.Addr == "" {
 		cfg.Server.HTTP.Addr = ":8080"
 	}
-	if cfg.Server.WebSocket.Addr == "" {
-		cfg.Server.WebSocket.Addr = ":8081"
-	}
 	if cfg.Server.CacheTTL.ToDuration() == 0 {
 		cfg.Server.CacheTTL = Duration(60 * 1e9) // 60 seconds
 	}

@@ -28,7 +28,6 @@ type Server struct {
 	cacheTTL      time.Duration
 	lastCache     map[string]sources.Price
 	cacheTime     time.Time
-	wsServer      *WebSocketServer // Optional WebSocket server for streaming
 	tlsConfig     config.TLSConfig // TLS configuration
 }
 
@@ -44,11 +43,6 @@ func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggreg
 		lastCache:     make(map[string]sources.Price),
 		tlsConfig:     tlsCfg,
 	}
-}
-
-// SetWebSocketServer sets the WebSocket server for streaming updates.
-func (s *Server) SetWebSocketServer(ws *WebSocketServer) {
-	s.wsServer = ws
 }
 
 // Start starts the HTTP server.
@@ -178,11 +172,6 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	// Update cache
 	s.lastCache = aggregatedPrices
 	s.cacheTime = time.Now()
-
-	// Send to WebSocket clients if enabled
-	if s.wsServer != nil {
-		s.wsServer.SendUpdate(aggregatedPrices)
-	}
 
 	s.sendJSON(w, s.convertToArray(aggregatedPrices))
 }

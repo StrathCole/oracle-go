@@ -26,7 +26,6 @@ type Config struct {
 // ServerConfig configures the price server component.
 type ServerConfig struct {
 	HTTP          HTTPConfig `yaml:"http"`
-	WebSocket     WSConfig   `yaml:"websocket"`
 	CacheTTL      Duration   `yaml:"cache_ttl"`
 	AggregateMode string     `yaml:"aggregate_mode"`
 }
@@ -35,13 +34,6 @@ type ServerConfig struct {
 type HTTPConfig struct {
 	Addr string    `yaml:"addr"`
 	TLS  TLSConfig `yaml:"tls"`
-}
-
-// WSConfig configures the WebSocket server.
-type WSConfig struct {
-	Enabled        bool     `yaml:"enabled"`
-	Addr           string   `yaml:"addr"`
-	AllowedOrigins []string `yaml:"allowed_origins"` // Empty = same-origin only, ["*"] = all origins
 }
 
 // TLSConfig holds TLS certificate configuration.
