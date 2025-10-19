@@ -125,8 +125,8 @@ func main() {
 		}
 	}
 
-	// Initialize metrics
-	if cfg.Metrics.Enabled {
+	// Initialize metrics (only if running server mode)
+	if cfg.Metrics.Enabled && cfg.IsServerMode() {
 		metrics.Init()
 		go func() {
 			logger.Info("Starting metrics server", "addr", cfg.Metrics.Addr)

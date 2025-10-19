@@ -51,8 +51,8 @@ func Validate(cfg *Config) error {
 func validateServerConfig(cfg *ServerConfig) error {
 	// Validate aggregate mode
 	mode := strings.ToLower(cfg.AggregateMode)
-	if mode != "median" && mode != "average" && mode != "tvwap" {
-		return fmt.Errorf("invalid aggregate_mode: %s (must be 'median', 'average', or 'tvwap')", cfg.AggregateMode)
+	if mode != "median" && mode != "average" {
+		return fmt.Errorf("invalid aggregate_mode: %s (must be 'median' or 'average')", cfg.AggregateMode)
 	}
 
 	// Validate TLS config

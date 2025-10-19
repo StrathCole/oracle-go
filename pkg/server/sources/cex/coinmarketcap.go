@@ -238,7 +238,6 @@ func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 
 	if len(s.GetAllPrices()) > 0 {
 		s.SetHealthy(true)
-		metrics.RecordSourceHealth(s.Name(), "cex", true)
 		s.Logger().Debug("Updated prices", "count", len(s.GetAllPrices()))
 	}
 

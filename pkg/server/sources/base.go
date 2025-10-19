@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,6 +111,9 @@ func (b *BaseSource) SetHealthy(healthy bool) {
 	b.healthMu.Lock()
 	defer b.healthMu.Unlock()
 	b.healthy = healthy
+
+	// Record health metric for monitoring
+	metrics.RecordSourceHealth(b.name, string(b.sourcetype), healthy)
 }
 
 // LastUpdate returns the time of the last successful price update
@@ -134,28 +138,48 @@ func (b *BaseSource) GetPrice(symbol string) (Price, bool) {
 	return price, ok
 }
 
-// SetPrice sets a price for a symbol and notifies subscribers
+// SetPrice updates the price for a symbol.
+// Automatically normalizes inverted symbols (e.g., "USD/LUNC" -> "LUNC/USD")
+// to ensure consistent symbol format across all sources.
 func (b *BaseSource) SetPrice(symbol string, price decimal.Decimal, timestamp time.Time) {
+	// Normalize symbol to ensure USD/USDT/USDC is always on the right side
+	normalizedSymbol, normalizedPrice := normalizeSymbolPair(symbol, price)
+
+	// Log if normalization occurred
+	if symbol != normalizedSymbol && b.logger != nil {
+		b.logger.Debug("Normalized inverted symbol pair",
+			"source", b.name,
+			"original_symbol", symbol,
+			"normalized_symbol", normalizedSymbol,
+			"original_price", price.String(),
+			"normalized_price", normalizedPrice.String())
+	}
+
 	b.pricesMu.Lock()
-	p := Price{
-		Symbol:    symbol,
-		Price:     price,
+	defer b.pricesMu.Unlock()
+
+	b.prices[normalizedSymbol] = Price{
+		Symbol:    normalizedSymbol,
+		Price:     normalizedPrice,
 		Timestamp: timestamp,
 		Source:    b.name,
 	}
-	b.prices[symbol] = p
-	b.pricesMu.Unlock()
 
-	// Record metric
-	metrics.RecordSourceUpdate(b.name, symbol)
+	// Record metrics with normalized symbol
+	metrics.RecordSourceUpdate(b.name, string(b.sourcetype))
 
 	// Notify subscribers
-	pricesMap := map[string]Price{
-		symbol: p,
-	}
 	b.notifySubscribers(PriceUpdate{
 		Source: b.name,
-		Prices: pricesMap,
+		Prices: map[string]Price{
+			normalizedSymbol: {
+				Symbol:    normalizedSymbol,
+				Price:     normalizedPrice,
+				Timestamp: timestamp,
+				Source:    b.name,
+			},
+		},
+		Error: nil,
 	})
 }
 
@@ -398,4 +422,49 @@ func (b *BaseSource) RetryWithBackoff(ctx context.Context, operation string, fn 
 	}
 
 	return fmt.Errorf("operation %s failed after %d attempts: %w", operation, b.retryConfig.MaxRetries, lastErr)
+}
+
+// normalizeSymbolPair ensures the symbol is in "ASSET/USD" or "ASSET/USDT" format.
+// If the symbol has USD/USDT/USDC as the BASE (e.g., "USD/KRW", "USDT/LUNC", "USDC/LUNC"),
+// it swaps the pair and inverts the price to get the correct "ASSET/USD" format.
+//
+// Examples:
+// - "LUNC/USD", price=0.00004122 -> "LUNC/USD", 0.00004122 (no change)
+// - "USDC/LUNC", price=24000 -> "LUNC/USDC", 0.0000417 (inverted)
+// - "USD/KRW", price=1300 -> "KRW/USD", 0.00077 (inverted)
+// - "USDT/BTC", price=0.00002 -> "BTC/USDT", 50000 (inverted)
+// - "EUR/USD", price=1.08 -> "EUR/USD", 1.08 (no change - EUR is the asset)
+func normalizeSymbolPair(symbol string, price decimal.Decimal) (string, decimal.Decimal) {
+	// Convert to uppercase for processing
+	upper := strings.ToUpper(symbol)
+
+	// Split symbol into parts
+	parts := strings.Split(upper, "/")
+	if len(parts) != 2 {
+		// No slash, assume it's already in correct format
+		return symbol, price
+	}
+
+	base := parts[0]
+	quote := parts[1]
+
+	// Check if base is USD/USDT/USDC (the quote currency we want on the right side)
+	// If so, the symbol is inverted and needs to be swapped
+	isInverted := (base == "USD" || base == "USDT" || base == "USDC")
+
+	if isInverted {
+		// Swap base and quote: "USD/KRW" becomes "KRW/USD"
+		normalizedSymbol := quote + "/" + base
+
+		// Invert price (avoid division by zero)
+		if price.IsZero() {
+			return normalizedSymbol, price
+		}
+		normalizedPrice := decimal.NewFromInt(1).Div(price)
+
+		return normalizedSymbol, normalizedPrice
+	}
+
+	// Already in correct format (ASSET/USD or ASSET/USDT)
+	return symbol, price
 }

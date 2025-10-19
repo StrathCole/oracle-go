@@ -21,9 +21,7 @@ func NewAggregator(mode string, logger *logging.Logger) (Aggregator, error) {
 		return NewMedianAggregator(logger), nil
 	case "average":
 		return NewAverageAggregator(logger), nil
-	case "tvwap":
-		return NewTVWAPAggregator(logger), nil
 	default:
-		return nil, fmt.Errorf("unknown aggregation mode: %s (supported: median, average, tvwap)", mode)
+		return nil, fmt.Errorf("unknown aggregation mode: %s (supported: median, average)", mode)
 	}
 }

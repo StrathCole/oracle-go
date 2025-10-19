@@ -213,30 +213,17 @@ func (s *GarudaSource) fetchPairPrice(ctx context.Context, pair GarudaPair) (dec
 		return decimal.Zero, fmt.Errorf("failed to marshal query: %w", err)
 	}
 
-	s.Logger().Debug("Querying Garuda contract",
-		"contract", pair.ContractAddress,
-		"query", string(queryBytes))
-
 	// Query contract via gRPC
 	respData, err := s.grpcClient.QuerySmartContract(ctx, pair.ContractAddress, queryBytes)
 	if err != nil {
 		return decimal.Zero, fmt.Errorf("gRPC query failed for contract %s: %w", pair.ContractAddress, err)
 	}
 
-	s.Logger().Debug("Got response from Garuda contract",
-		"response", string(respData))
-
 	// Parse response
 	var poolResp GarudaPoolResponse
 	if err := json.Unmarshal(respData, &poolResp); err != nil {
 		return decimal.Zero, fmt.Errorf("failed to decode response (got: %s): %w", string(respData), err)
 	}
-
-	// Log the response to see what we actually got
-	s.Logger().Debug("Garuda pool response",
-		"contract", pair.ContractAddress,
-		"reserve1", poolResp.Reserve1,
-		"reserve2", poolResp.Reserve2)
 
 	// Parse reserves
 	if poolResp.Reserve1 == "" || poolResp.Reserve2 == "" {

@@ -2,6 +2,7 @@ package sources
 
 import (
 	"fmt"
+	"strings"
 
 	"tc.com/oracle-prices/pkg/logging"
 )
@@ -36,6 +37,10 @@ func ParsePairsFromMap(config map[string]interface{}) (map[string]string, error)
 		source, ok := sourceRaw.(string)
 		if !ok {
 			return nil, fmt.Errorf("pair value for %s must be a string, got %T", unified, sourceRaw)
+		}
+		// Validate unified symbol format
+		if err := ValidateSymbolFormat(unified); err != nil {
+			return nil, fmt.Errorf("unified symbol: %w", err)
 		}
 		pairs[unified] = source
 	}
@@ -97,6 +102,9 @@ func ParseCosmWasmPairs(config map[string]interface{}) ([]CosmWasmPairConfig, er
 		if pair.Symbol == "" {
 			return nil, fmt.Errorf("pair at index %d missing required field 'symbol'", i)
 		}
+		if err := ValidateSymbolFormat(pair.Symbol); err != nil {
+			return nil, fmt.Errorf("pair at index %d: %w", i, err)
+		}
 		if pair.ContractAddress == "" {
 			return nil, fmt.Errorf("pair %s missing required field 'contract_address'", pair.Symbol)
 		}
@@ -138,4 +146,36 @@ func getBoolFromMap(m map[string]interface{}, key string, defaultVal bool) bool 
 		return v
 	}
 	return defaultVal
+}
+
+// ValidateSymbolFormat checks if a symbol is in valid BASE/QUOTE format
+// Valid formats:
+//   - "LUNC/USD", "LUNC/USDT", "LUNC/USDC" (crypto pairs)
+//   - "KRW/USD", "EUR/USD" (fiat pairs)
+//   - "BTC/USDT" (crypto pairs)
+// Invalid formats:
+//   - "LUNC" (no quote currency)
+//   - "LUNCUSDT" (no separator)
+//   - "" (empty)
+func ValidateSymbolFormat(symbol string) error {
+	if symbol == "" {
+		return fmt.Errorf("symbol cannot be empty")
+	}
+	
+	parts := strings.Split(symbol, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("symbol must be in BASE/QUOTE format (e.g., 'LUNC/USD'), got '%s'", symbol)
+	}
+	
+	base := strings.TrimSpace(parts[0])
+	quote := strings.TrimSpace(parts[1])
+	
+	if base == "" {
+		return fmt.Errorf("symbol BASE currency cannot be empty in '%s'", symbol)
+	}
+	if quote == "" {
+		return fmt.Errorf("symbol QUOTE currency cannot be empty in '%s'", symbol)
+	}
+	
+	return nil
 }

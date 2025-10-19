@@ -506,9 +506,15 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 	}
 
 	// Get LUNC/USD price for conversion
+	// Try common variants: LUNC/USD or LUNC/USDT
+	// Note: All symbols are normalized at source level (BaseSource.SetPrice)
+	// and validated to be in BASE/QUOTE format during config parsing
 	luncUSD, hasLuncUSD := prices["LUNC/USD"]
 	if !hasLuncUSD {
-		if p, ok := prices["LUNC"]; ok {
+		if p, ok := prices["LUNC/USDT"]; ok {
+			luncUSD = p
+			hasLuncUSD = true
+		} else if p, ok := prices["LUNC/USDC"]; ok {
 			luncUSD = p
 			hasLuncUSD = true
 		}
@@ -535,7 +541,7 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 		denom := symbolToDenom(symbol)
 
 		// Skip LUNC itself - we'll handle it separately
-		if symbol == "LUNC/USD" || symbol == "LUNC" {
+		if symbol == "LUNC/USD" || symbol == "LUNC/USDT" || symbol == "LUNC/USDC" {
 			continue
 		}
 
@@ -614,7 +620,6 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 	}
 
 	v.logger.Debug().
-		Strs("conversions", conversions).
 		Strs("filtered_out", filtered).
 		Int("matched", len(result)).
 		Msg("Price to denom conversion complete")
@@ -640,9 +645,10 @@ func symbolToDenom(symbol string) string {
 	// Convert to uppercase for processing
 	upper := strings.ToUpper(symbol)
 
-	// Remove "/USD" or "/USDT" suffix if present (case-insensitive)
+	// Remove "/USD", "/USDT", "/USDC" suffix if present (case-insensitive)
 	upper = strings.TrimSuffix(upper, "/USD")
 	upper = strings.TrimSuffix(upper, "/USDT")
+	upper = strings.TrimSuffix(upper, "/USDC")
 
 	// Handle special cases
 	switch upper {
@@ -736,7 +742,7 @@ func (v *Voter) verifyVotesAgainstChain(ctx context.Context) error {
 
 		// Compare against 1.0 since diff is already in percentage (multiplied by 100)
 		if diffAbs.GTE(sdk.OneDec()) { // >= 1%
-			v.logger.Warn().Msgf("⚠️  %s: DEVIATION %.4f%% (voted=%s, chain=%s)", 
+			v.logger.Warn().Msgf("⚠️  %s: DEVIATION %.4f%% (voted=%s, chain=%s)",
 				denom, diffPercent, votedRate.String(), chainRate.String())
 		} else {
 			v.logger.Info().Msgf("✓ %s: %.4f%% diff", denom, diffPercent)

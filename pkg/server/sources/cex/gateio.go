@@ -195,7 +195,6 @@ func (s *GateioSource) fetchPrices(ctx context.Context) error {
 
 	if updateCount > 0 {
 		s.SetHealthy(true)
-		metrics.RecordSourceHealth(s.Name(), string(s.Type()), true)
 		s.Logger().Debug("Updated prices", "count", updateCount)
 	}
 

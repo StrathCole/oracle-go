@@ -273,7 +273,6 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	}
 
 	s.SetHealthy(true)
-	metrics.RecordSourceHealth(s.Name(), string(s.Type()), true)
 
 	s.Logger().Debug("Fetched prices from CoinGecko", "count", updateCount)
 
