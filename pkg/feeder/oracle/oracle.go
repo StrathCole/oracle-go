@@ -79,10 +79,16 @@ func NewPrevote(prices []Price, validator sdk.ValAddress, feeder sdk.AccAddress,
 	hash := oracletypes.GetAggregateVoteHash(salt, voteStr, validator)
 
 	logger.Info().
+		Str("validator", validator.String()).
+		Str("feeder", feeder.String()).
+		Msg("Created prevote")
+
+	logger.Debug().
 		Str("salt", salt).
 		Str("vote", voteStr).
 		Str("hash", hash.String()).
 		Str("validator", validator.String()).
+		Str("feeder", feeder.String()).
 		Int("num_prices", len(sortedPrices)).
 		Msg("Created prevote")
 
