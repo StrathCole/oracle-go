@@ -290,7 +290,7 @@ curl https://terra-classic-lcd.publicnode.com/cosmos/base/tendermint/v1beta1/nod
 ### No Whitelisted Prices
 
 ```bash
-terrad query oracle whitelist
+terrad query oracle params -o json | jq -r '.params.whitelist[].name'
 # Verify sources provide denoms in whitelist
 ```
 
