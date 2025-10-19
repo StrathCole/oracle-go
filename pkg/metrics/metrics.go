@@ -3,6 +3,7 @@ package metrics
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -161,10 +162,18 @@ func Init() {
 
 // ServeHTTP serves Prometheus metrics on the specified address.
 func ServeHTTP(addr string) error {
-	http.Handle("/metrics", promhttp.Handler())
+	// Default to localhost if no host specified
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+
+	// Create separate mux for isolation (avoid global DefaultServeMux)
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      http.DefaultServeMux,
+		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

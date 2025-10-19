@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -68,10 +69,19 @@ func (w *Websocket) loop(ctx context.Context) {
 			if err := w.connect(ctx); err != nil {
 				w.logger.Error().Err(err).Msg("failed to connect to websocket")
 
+				// Add jitter to prevent thundering herd problem
+				// Jitter is random value between 0 and reconnectDelay/2
+				jitter := time.Duration(rand.Int63n(int64(w.reconnectDelay) / 2))
+				waitTime := w.reconnectDelay + jitter
+
+				w.logger.Warn().
+					Dur("backoff", waitTime).
+					Msg("reconnecting after backoff")
+
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(w.reconnectDelay):
+				case <-time.After(waitTime):
 					// Exponential backoff with cap
 					w.reconnectDelay *= 2
 					if w.reconnectDelay > maxReconnectBackoff {

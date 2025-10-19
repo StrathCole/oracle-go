@@ -9,7 +9,7 @@ mode: both
 server:
   # HTTP API server
   http:
-    addr: ":8080"
+    addr: "127.0.0.1:8080"  # Bind to localhost by default for security
     tls:
       enabled: false
       cert: ""
@@ -18,7 +18,7 @@ server:
   # WebSocket server for real-time price streaming
   websocket:
     enabled: true
-    addr: ":8081"
+    addr: "127.0.0.1:8081"  # Bind to localhost by default for security
   
     # Cache TTL for price responses
   cache_ttl: 60s
@@ -920,7 +920,7 @@ sources:
 # Prometheus Metrics
 metrics:
   enabled: true
-  addr: ":9091"
+  addr: "127.0.0.1:9091"  # Bind to localhost by default for security
   path: /metrics
 
 # Logging Configuration

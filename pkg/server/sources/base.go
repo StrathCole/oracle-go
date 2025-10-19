@@ -12,6 +12,7 @@ import (
 	"github.com/StrathCole/oracle-go/pkg/logging"
 	"github.com/StrathCole/oracle-go/pkg/metrics"
 	"github.com/shopspring/decimal"
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -62,6 +63,7 @@ type BaseSource struct {
 	retryConfig      RetryConfig
 	consecutiveFails int
 	failsMu          sync.Mutex
+	rateLimiter      *rate.Limiter
 }
 
 // NewBaseSource creates a new base source with pair mappings
@@ -85,6 +87,8 @@ func NewBaseSource(name string, sourcetype SourceType, pairs map[string]string, 
 		healthy:          false,
 		retryConfig:      DefaultRetryConfig(),
 		consecutiveFails: 0,
+		// Default rate limit: 30 requests per minute (2 requests per second burst)
+		rateLimiter:      rate.NewLimiter(rate.Every(2*time.Second), 2),
 	}
 }
 
@@ -249,6 +253,22 @@ func (b *BaseSource) Close() {
 	default:
 		close(b.stopChan)
 	}
+}
+
+// WaitForRateLimit waits for rate limit permission before proceeding.
+// Returns an error if the context is cancelled.
+func (b *BaseSource) WaitForRateLimit(ctx context.Context) error {
+	if b.rateLimiter == nil {
+		return nil
+	}
+	return b.rateLimiter.Wait(ctx)
+}
+
+// SetRateLimit configures the rate limiter with custom limits.
+// rate: requests per second (e.g., 0.5 for 1 request per 2 seconds)
+// burst: maximum burst size.
+func (b *BaseSource) SetRateLimit(ratePerSecond float64, burst int) {
+	b.rateLimiter = rate.NewLimiter(rate.Limit(ratePerSecond), burst)
 }
 
 // Logger returns the logger.
