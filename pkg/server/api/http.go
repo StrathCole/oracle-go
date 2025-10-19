@@ -17,6 +17,9 @@ import (
 	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
+// ErrTLSCertKeyMissing indicates that TLS is enabled but certificate or key is not provided.
+var ErrTLSCertKeyMissing = errors.New("TLS enabled but cert/key not provided")
+
 // Server represents the HTTP API server.
 type Server struct {
 	addr          string
@@ -64,7 +67,7 @@ func (s *Server) Start() error {
 	// Configure TLS if enabled
 	if s.tlsConfig.Enabled {
 		if s.tlsConfig.Cert == "" || s.tlsConfig.Key == "" {
-			return fmt.Errorf("TLS enabled but cert/key not provided")
+			return ErrTLSCertKeyMissing
 		}
 
 		// Configure TLS with secure defaults

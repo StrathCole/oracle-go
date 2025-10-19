@@ -2,9 +2,10 @@ package eventstream
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"sync"
 	"time"
 
@@ -63,7 +64,6 @@ func (w *Websocket) loop(ctx context.Context) {
 			w.logger.Info().Msg("context cancelled, stopping websocket")
 			return
 		case <-w.closed:
-			w.logger.Info().Msg("websocket closed")
 			return
 		default:
 			if err := w.connect(ctx); err != nil {
@@ -71,7 +71,9 @@ func (w *Websocket) loop(ctx context.Context) {
 
 				// Add jitter to prevent thundering herd problem
 				// Jitter is random value between 0 and reconnectDelay/2
-				jitter := time.Duration(rand.Int63n(int64(w.reconnectDelay) / 2))
+				maxJitter := int64(w.reconnectDelay) / 2
+				jitterBig, _ := rand.Int(rand.Reader, big.NewInt(maxJitter))
+				jitter := time.Duration(jitterBig.Int64())
 				waitTime := w.reconnectDelay + jitter
 
 				w.logger.Warn().

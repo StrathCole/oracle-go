@@ -687,7 +687,8 @@ func symbolToDenom(symbol string) string {
 
 	// Validate symbol doesn't contain invalid characters
 	for _, ch := range symbol {
-		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '/' || ch == '-' || ch == '_') {
+		// Apply De Morgan's law for clarity: invalid if NOT in any valid range
+		if (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z') && ch != '/' && ch != '-' && ch != '_' {
 			return "" // Invalid character found
 		}
 	}

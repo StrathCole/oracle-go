@@ -88,7 +88,7 @@ func NewBaseSource(name string, sourcetype SourceType, pairs map[string]string, 
 		retryConfig:      DefaultRetryConfig(),
 		consecutiveFails: 0,
 		// Default rate limit: 30 requests per minute (2 requests per second burst)
-		rateLimiter:      rate.NewLimiter(rate.Every(2*time.Second), 2),
+		rateLimiter: rate.NewLimiter(rate.Every(2*time.Second), 2),
 	}
 }
 

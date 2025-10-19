@@ -179,7 +179,7 @@ func (s *Stream) updateParams(ctx context.Context) error {
 
 	// Validate vote period
 	if params.VotePeriod == 0 {
-		return fmt.Errorf("invalid vote period: cannot be zero")
+		return ErrInvalidVotePeriod
 	}
 	if params.VotePeriod > 10000 {
 		s.logger.Warn().

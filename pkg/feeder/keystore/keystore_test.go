@@ -234,7 +234,7 @@ func TestAddressPrefix(t *testing.T) {
 func BenchmarkGetAuth(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		GetAuth(testMnemonic, "")
+		_, _, _, _ = GetAuth(testMnemonic, "")
 	}
 }
 
