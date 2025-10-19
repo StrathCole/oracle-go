@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	ws "github.com/StrathCole/oracle-go/pkg/server/sources/websocket"
-	"github.com/shopspring/decimal"
 )
 
 const (

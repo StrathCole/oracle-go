@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/feeder/client"
 	"github.com/rs/zerolog"
+
+	"github.com/StrathCole/oracle-go/pkg/feeder/client"
 )
 
 const (

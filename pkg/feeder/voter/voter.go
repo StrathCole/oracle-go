@@ -603,7 +603,7 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 
 		// Use decimal arithmetic to preserve precision for small LUNC prices
 		one := decimal.NewFromInt(1)
-		usdPerFiat := one.Div(price)        // Invert: USD/Fiat
+		usdPerFiat := one.Div(price)           // Invert: USD/Fiat
 		fiatPerLunc := usdPerFiat.Mul(luncUSD) // USD/Fiat × LUNC/USD = Fiat/LUNC
 
 		// Convert to float64 only at the final step for oracle.Price

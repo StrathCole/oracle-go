@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/logging"
-	"github.com/StrathCole/oracle-go/pkg/metrics"
 	"github.com/shopspring/decimal"
 	"golang.org/x/time/rate"
+
+	"github.com/StrathCole/oracle-go/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/metrics"
 )
 
 const (
