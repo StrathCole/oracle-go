@@ -359,7 +359,10 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	logger.Info("Using HD derivation path", "path", hdPath)
 
 	// Create keyring from mnemonic
-	kr, _, feederAddr := keystore.GetAuth(mnemonic, hdPath)
+	kr, _, feederAddr, err := keystore.GetAuth(mnemonic, hdPath)
+	if err != nil {
+		return fmt.Errorf("failed to create keyring from mnemonic: %w", err)
+	}
 	logger.Info("Loaded feeder account", "address", feederAddr.String())
 
 	// Create encoding config (includes all registered account types)

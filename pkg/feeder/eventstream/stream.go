@@ -177,6 +177,16 @@ func (s *Stream) updateParams(ctx context.Context) error {
 		return fmt.Errorf("failed to get oracle params: %w", err)
 	}
 
+	// Validate vote period
+	if params.VotePeriod == 0 {
+		return fmt.Errorf("invalid vote period: cannot be zero")
+	}
+	if params.VotePeriod > 10000 {
+		s.logger.Warn().
+			Uint64("vote_period", params.VotePeriod).
+			Msg("Unusually large vote period detected")
+	}
+
 	// Extract denom names from DenomList
 	whitelist := make([]string, len(params.Whitelist))
 	for i, denom := range params.Whitelist {

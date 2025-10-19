@@ -32,11 +32,11 @@ type privKeyKeyring struct {
 }
 
 // GetAuth derives a keyring from a BIP39 mnemonic using a specified HD derivation path.
-// Returns the keyring, validator address, and account address.
+// Returns the keyring, validator address, account address, and error.
 // The HD derivation path should be in format: m/44'/cointype'/account'/change/index
 // For Terra Classic: m/44'/330'/0'/0/0
 // For standard Cosmos: m/44'/118'/0'/0/0.
-func GetAuth(mnemonic, hdPath string) (keyring.Keyring, sdk.ValAddress, sdk.AccAddress) {
+func GetAuth(mnemonic, hdPath string) (keyring.Keyring, sdk.ValAddress, sdk.AccAddress, error) {
 	// Default to Terra Classic path if not specified
 	if hdPath == "" {
 		hdPath = "m/44'/330'/0'/0/0"
@@ -47,10 +47,10 @@ func GetAuth(mnemonic, hdPath string) (keyring.Keyring, sdk.ValAddress, sdk.AccA
 
 	priv, err := hd.DerivePrivateKeyForPath(master, ch, hdPath)
 	if err != nil {
-		panic(err)
+		return nil, nil, nil, fmt.Errorf("failed to derive private key: %w", err)
 	}
 	kr := newPrivKeyKeyring(hex.EncodeToString(priv))
-	return kr, sdk.ValAddress(kr.addr), kr.addr
+	return kr, sdk.ValAddress(kr.addr), kr.addr, nil
 }
 
 // newPrivKeyKeyring creates a new keyring from a hex-encoded private key.
