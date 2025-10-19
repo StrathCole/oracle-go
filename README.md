@@ -27,7 +27,7 @@ cp config/config.yaml config/my-config.yaml
 
 ```bash
 export ORACLE_MNEMONIC="your 24-word mnemonic"
-./oracle-go --config config/my-config.yaml
+./build/oracle-go --config config/my-config.yaml
 ```
 
 ### 4. Verify
@@ -84,10 +84,10 @@ sources:
 
 ```bash
 # Price server only
-./oracle-go --config config.yaml --server
+./build/oracle-go --config config.yaml --server
 
 # Feeder only
-./oracle-go --config config.yaml --feeder
+./build/oracle-go --config config.yaml --feeder
 ```
 
 </details>
