@@ -39,8 +39,9 @@ type HTTPConfig struct {
 
 // WSConfig configures the WebSocket server.
 type WSConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Addr    string `yaml:"addr"`
+	Enabled        bool     `yaml:"enabled"`
+	Addr           string   `yaml:"addr"`
+	AllowedOrigins []string `yaml:"allowed_origins"` // Empty = same-origin only, ["*"] = all origins
 }
 
 // TLSConfig holds TLS certificate configuration.

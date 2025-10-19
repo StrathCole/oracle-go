@@ -287,7 +287,7 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	// Start WebSocket server if enabled
 	var wsServer *api.WebSocketServer
 	if cfg.Server.WebSocket.Enabled {
-		wsServer = api.NewWebSocketServer(cfg.Server.WebSocket.Addr, cfg.Server.HTTP.TLS, logger)
+		wsServer = api.NewWebSocketServer(cfg.Server.WebSocket.Addr, cfg.Server.HTTP.TLS, cfg.Server.WebSocket.AllowedOrigins, logger)
 		server.SetWebSocketServer(wsServer)
 
 		go func() {

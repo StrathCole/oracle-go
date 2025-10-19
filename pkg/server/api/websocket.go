@@ -67,8 +67,11 @@ type PriceData struct {
 }
 
 // NewWebSocketServer creates a new WebSocket server.
-func NewWebSocketServer(addr string, tlsCfg config.TLSConfig, logger *logging.Logger) *WebSocketServer {
+func NewWebSocketServer(addr string, tlsCfg config.TLSConfig, allowedOrigins []string, logger *logging.Logger) *WebSocketServer {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create origin checker based on configuration
+	originChecker := createOriginChecker(allowedOrigins, logger)
 
 	return &WebSocketServer{
 		addr:      addr,
@@ -77,15 +80,59 @@ func NewWebSocketServer(addr string, tlsCfg config.TLSConfig, logger *logging.Lo
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
-			CheckOrigin: func(_ *http.Request) bool {
-				// Allow all origins (configure CORS as needed)
-				return true
-			},
+			CheckOrigin:     originChecker,
 		},
 		clients: make(map[*WebSocketClient]bool),
 		updates: make(chan map[string]sources.Price, 100),
 		ctx:     ctx,
 		cancel:  cancel,
+	}
+}
+
+// createOriginChecker creates an origin validation function based on allowed origins configuration.
+func createOriginChecker(allowedOrigins []string, logger *logging.Logger) func(*http.Request) bool {
+	// If allowed origins contains "*", allow all origins (not recommended for production)
+	for _, origin := range allowedOrigins {
+		if origin == "*" {
+			logger.Info("WebSocket configured to allow all origins - not recommended for public deployment")
+			return func(_ *http.Request) bool {
+				return true
+			}
+		}
+	}
+
+	// If no origins specified, only allow same-origin requests (secure default for localhost)
+	if len(allowedOrigins) == 0 {
+		return func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			// No origin header means non-browser client (e.g., curl, scripts) - allow
+			if origin == "" {
+				return true
+			}
+			// Check if origin matches the host
+			host := r.Host
+			return origin == "http://"+host || origin == "https://"+host
+		}
+	}
+
+	// Create allowlist from configured origins
+	allowedMap := make(map[string]bool)
+	for _, origin := range allowedOrigins {
+		allowedMap[origin] = true
+	}
+
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		// No origin header means non-browser client - allow
+		if origin == "" {
+			return true
+		}
+		// Check if origin is in the allowlist
+		allowed := allowedMap[origin]
+		if !allowed {
+			logger.Warn("WebSocket connection rejected", "origin", origin, "remote", r.RemoteAddr)
+		}
+		return allowed
 	}
 }
 

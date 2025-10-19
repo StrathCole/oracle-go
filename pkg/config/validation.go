@@ -116,14 +116,12 @@ func validateFeederConfig(cfg *FeederConfig) error {
 		}
 	}
 
-	// Validate mnemonic (either direct or from env)
+	// Validate mnemonic configuration is present
+	// Note: We only check that EITHER a direct mnemonic OR an env var name is configured.
+	// We do NOT check the env var value here to avoid TOCTOU (Time-of-Check-Time-of-Use) issues.
+	// The actual mnemonic value is validated at runtime when it's needed.
 	if cfg.Mnemonic == "" && cfg.MnemonicEnv == "" {
 		return fmt.Errorf("%w", ErrMnemonicRequired)
-	}
-	if cfg.MnemonicEnv != "" {
-		if os.Getenv(cfg.MnemonicEnv) == "" {
-			return fmt.Errorf("%w: %s", ErrMnemonicEnvNotSet, cfg.MnemonicEnv)
-		}
 	}
 
 	// Validate gas price is configured

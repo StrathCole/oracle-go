@@ -17,19 +17,27 @@ COPY . .
 # Build the binary
 RUN make build
 
-# Final stage
-FROM alpine:latest
+# Final stage - use pinned alpine version for security
+FROM alpine:3.22
 
 WORKDIR /oracle-go
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata wget
 
-# Copy binary from builder
-COPY --from=builder /build/build/oracle-go .
+# Create non-root user and group
+RUN addgroup -g 1000 oracle && \
+    adduser -D -u 1000 -G oracle oracle
 
-# Create directory for config and logs
-RUN mkdir -p /oracle-go/config /var/log/oracle-go
+# Create directories with proper ownership
+RUN mkdir -p /oracle-go/config /var/log/oracle-go && \
+    chown -R oracle:oracle /oracle-go /var/log/oracle-go
+
+# Copy binary from builder with proper ownership
+COPY --from=builder --chown=oracle:oracle /build/build/oracle-go .
+
+# Switch to non-root user
+USER oracle:oracle
 
 # Expose ports
 # 8080: HTTP API (price server)
