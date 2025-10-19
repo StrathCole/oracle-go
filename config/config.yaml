@@ -76,9 +76,8 @@ feeder:
   coin_type: 330
   
   # Fee configuration
-  fee_amount: "100000uluna"  # Fixed fee amount (0.1 LUNC per message)
-  gas_limit: 200000          # Gas limit (0 = auto estimate)
-  gas_price: "0.015"         # Gas price in uluna (used for fee calculation if fee_amount not set)
+  gas_price: "28.325"       # Gas price in uluna for fee calculation
+  fee_denom: "uluna"        # Fee denomination (default: uluna for Terra Classic)
   
   # Price source for feeder
   price_source:

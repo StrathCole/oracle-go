@@ -426,20 +426,10 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		return fmt.Errorf("failed to start event stream: %w", err)
 	}
 
-	// Parse fee amount (oracle txs can be free, so 0 amount is valid)
-	feeDenom := "uluna" // Default denom
-	if cfg.Feeder.FeeAmount != "" {
-		logger.Info("Parsing fee configuration", "fee_amount", cfg.Feeder.FeeAmount, "gas_price", cfg.Feeder.GasPrice)
-
-		feeCoins, err := sdk.ParseCoinsNormalized(cfg.Feeder.FeeAmount)
-		if err != nil {
-			return fmt.Errorf("invalid fee amount '%s': %w", cfg.Feeder.FeeAmount, err)
-		}
-		if len(feeCoins) > 0 {
-			feeDenom = feeCoins[0].Denom
-		}
-	} else {
-		logger.Info("No fee amount configured, using zero fees (oracle txs are free)")
+	// Validate fee denom configuration
+	feeDenom := cfg.Feeder.FeeDenom
+	if feeDenom == "" {
+		feeDenom = "uluna" // Default to uluna for Terra Classic
 	}
 
 	// Create voter

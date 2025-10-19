@@ -126,8 +126,8 @@ func validateFeederConfig(cfg *FeederConfig) error {
 		}
 	}
 
-	// Validate fee configuration
-	if cfg.FeeAmount == "" && cfg.GasPrice == "" {
+	// Validate gas price is configured
+	if cfg.GasPrice == "" {
 		return fmt.Errorf("%w", ErrFeeConfigRequired)
 	}
 

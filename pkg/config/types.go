@@ -60,9 +60,8 @@ type FeederConfig struct {
 	MnemonicEnv   string            `yaml:"mnemonic_env"`   // Environment variable for mnemonic
 	HDPath        string            `yaml:"hd_path"`        // HD derivation path (default: "m/44'/330'/0'/0/0" for Terra Classic)
 	CoinType      uint32            `yaml:"coin_type"`      // BIP44 coin type (default: 330 for Terra Classic, 118 for Cosmos)
-	FeeAmount     string            `yaml:"fee_amount"`     // Fee amount (e.g., "100000uluna" or "" for zero fees)
-	GasLimit      uint64            `yaml:"gas_limit"`      // Gas limit (0 = auto estimate)
-	GasPrice      string            `yaml:"gas_price"`      // Gas price for fee calculation
+	GasPrice      string            `yaml:"gas_price"`      // Gas price for fee calculation (uluna)
+	FeeDenom      string            `yaml:"fee_denom"`      // Fee denomination (default: uluna for Terra Classic)
 	PriceSource   PriceSourceConfig `yaml:"price_source"`   // Where to fetch prices
 	VotePeriod    uint64            `yaml:"vote_period"`    // Vote period in blocks (default: 30)
 	DryRun        bool              `yaml:"dry_run"`        // Dry run mode: create votes but don't submit (for testing)
