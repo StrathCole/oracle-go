@@ -26,7 +26,7 @@ func Init(level, format, output string) (*Logger, error) {
 	zerolog.SetGlobalLevel(lvl)
 
 	// Configure output
-	var writer = os.Stdout
+	writer := os.Stdout
 	if output == "stderr" {
 		writer = os.Stderr
 	} else if output != "stdout" && output != "" {
@@ -37,7 +37,7 @@ func Init(level, format, output string) (*Logger, error) {
 			return nil, err
 		}
 		// #nosec G304 -- Path sanitized with filepath.Clean and filepath.Abs
-		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		file, err := os.OpenFile(absPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, err
 		}
@@ -153,4 +153,10 @@ func Fatal(msg string, fields ...interface{}) {
 	if globalLogger != nil {
 		globalLogger.Fatal(msg, fields...)
 	}
+}
+
+// NewNoopLogger creates a logger that discards all output.
+// Useful for tests or scenarios where logging is not needed.
+func NewNoopLogger() *Logger {
+	return &Logger{logger: zerolog.Nop()}
 }

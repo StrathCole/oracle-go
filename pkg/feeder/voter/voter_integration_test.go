@@ -279,6 +279,7 @@ func TestVotingRoundTiming(t *testing.T) {
 func TestPriceToVoteConversion(t *testing.T) {
 	// Test prices
 	prices := map[string]decimal.Decimal{
+		"LUNC/USD": decimal.NewFromFloat(0.0001),
 		"KRW/USD":  decimal.NewFromFloat(0.00075),
 		"SDR/USD":  decimal.NewFromFloat(1.35958),
 		"USD":      decimal.NewFromFloat(1.0),
@@ -307,12 +308,13 @@ func TestPriceToVoteConversion(t *testing.T) {
 	assert.Contains(t, denomMap, "umnt")
 	assert.Contains(t, denomMap, "UST")
 
-	// Verify price values
-	assert.InDelta(t, 0.00075, denomMap["ukrw"].Price, 0.0000001)
-	assert.InDelta(t, 1.35958, denomMap["usdr"].Price, 0.00001)
-	assert.InDelta(t, 1.0, denomMap["uusd"].Price, 0.0000001)
-	assert.InDelta(t, 0.00029, denomMap["umnt"].Price, 0.0000001)
-	assert.InDelta(t, 0.02, denomMap["UST"].Price, 0.0001)
+	// Verify price values (after LUNC/USD conversion)
+	luncUSD := 0.0001
+	assert.InDelta(t, (1.0/0.00075)*luncUSD, denomMap["ukrw"].Price, 0.001)
+	assert.InDelta(t, (1.0/1.35958)*luncUSD, denomMap["usdr"].Price, 0.00001)
+	assert.InDelta(t, 1.0*luncUSD, denomMap["uusd"].Price, 0.0000001)
+	assert.InDelta(t, (1.0/0.00029)*luncUSD, denomMap["umnt"].Price, 0.01)
+	assert.InDelta(t, (1.0/0.02)*luncUSD, denomMap["UST"].Price, 0.001) // UST is also converted
 }
 
 // TestPrevoteHashCalculation tests prevote hash calculation.
@@ -325,8 +327,10 @@ func TestPrevoteHashCalculation(t *testing.T) {
 
 	// Create test addresses using SDK address from hex
 	// Using same bytes for both validator and feeder for testing purposes
-	testBytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
-		0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14}
+	testBytes := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+		0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
+	}
 
 	validatorAddr := sdk.ValAddress(testBytes)
 	feederAddr := sdk.AccAddress(testBytes)
@@ -352,10 +356,14 @@ func TestPrevoteHashCalculation(t *testing.T) {
 // TestMultipleValidators tests voting for multiple validators.
 func TestMultipleValidators(t *testing.T) {
 	// Create different test addresses
-	testBytes1 := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
-		0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14}
-	testBytes2 := []byte{0x14, 0x13, 0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B,
-		0x0A, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01}
+	testBytes1 := []byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+		0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
+	}
+	testBytes2 := []byte{
+		0x14, 0x13, 0x12, 0x11, 0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B,
+		0x0A, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+	}
 
 	validator1 := sdk.ValAddress(testBytes1)
 	feeder1 := sdk.AccAddress(testBytes1)
@@ -417,10 +425,11 @@ func TestWhitelistFilteringInVote(t *testing.T) {
 
 	// Prices with both whitelisted and non-whitelisted denoms
 	prices := map[string]decimal.Decimal{
-		"KRW/USD": decimal.NewFromFloat(0.00075), // whitelisted
-		"USD":     decimal.NewFromFloat(1.0),     // whitelisted
-		"BTC/USD": decimal.NewFromFloat(50000.0), // NOT whitelisted
-		"ETH/USD": decimal.NewFromFloat(3000.0),  // NOT whitelisted
+		"LUNC/USD": decimal.NewFromFloat(0.0001),
+		"KRW/USD":  decimal.NewFromFloat(0.00075), // whitelisted
+		"USD":      decimal.NewFromFloat(1.0),     // whitelisted
+		"BTC/USD":  decimal.NewFromFloat(50000.0), // NOT whitelisted
+		"ETH/USD":  decimal.NewFromFloat(3000.0),  // NOT whitelisted
 	}
 
 	whitelist := []string{"ukrw", "uusd"}
@@ -548,7 +557,6 @@ func TestRealPriceSourceConnection(t *testing.T) {
 	require.NoError(t, err, "Failed to create price client")
 
 	prices, err := priceClient.GetPrices(ctx)
-
 	if err != nil {
 		t.Logf("⚠ Price server not running on localhost:8080: %v", err)
 		t.Skip("Skipping test - price server not available")

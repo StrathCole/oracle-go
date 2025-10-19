@@ -113,10 +113,11 @@ func TestConvertToOraclePrices(t *testing.T) {
 		{
 			name: "Filter by whitelist",
 			prices: map[string]decimal.Decimal{
-				"KRW/USD": decimal.NewFromFloat(0.00075),
-				"USD":     decimal.NewFromFloat(1.0),
-				"SDR/USD": decimal.NewFromFloat(1.35),
-				"BTC/USD": decimal.NewFromFloat(50000.0), // Not in whitelist
+				"LUNC/USD": decimal.NewFromFloat(0.0001),
+				"KRW/USD":  decimal.NewFromFloat(0.00075),
+				"USD":      decimal.NewFromFloat(1.0),
+				"SDR/USD":  decimal.NewFromFloat(1.35),
+				"BTC/USD":  decimal.NewFromFloat(50000.0), // Not in whitelist
 			},
 			whitelist: []string{"ukrw", "uusd", "usdr"},
 			expected:  3,
@@ -124,7 +125,8 @@ func TestConvertToOraclePrices(t *testing.T) {
 		{
 			name: "Empty whitelist",
 			prices: map[string]decimal.Decimal{
-				"KRW/USD": decimal.NewFromFloat(0.00075),
+				"LUNC/USD": decimal.NewFromFloat(0.0001),
+				"KRW/USD":  decimal.NewFromFloat(0.00075),
 			},
 			whitelist: []string{},
 			expected:  0,
@@ -132,6 +134,7 @@ func TestConvertToOraclePrices(t *testing.T) {
 		{
 			name: "USTC meta-denom",
 			prices: map[string]decimal.Decimal{
+				"LUNC/USD": decimal.NewFromFloat(0.0001),
 				"USTC/USD": decimal.NewFromFloat(0.02),
 			},
 			whitelist: []string{"UST"},
@@ -166,10 +169,12 @@ func TestConvertToOraclePrices(t *testing.T) {
 
 func TestConvertToOraclePricesValues(t *testing.T) {
 	v := &Voter{}
+	luncUSD := 0.0001
 
 	prices := map[string]decimal.Decimal{
-		"KRW/USD": decimal.NewFromFloat(0.00075),
-		"USD":     decimal.NewFromFloat(1.0),
+		"LUNC/USD": decimal.NewFromFloat(luncUSD),
+		"KRW/USD":  decimal.NewFromFloat(0.00075),
+		"USD":      decimal.NewFromFloat(1.0),
 	}
 	whitelist := []string{"ukrw", "uusd"}
 
@@ -180,9 +185,14 @@ func TestConvertToOraclePricesValues(t *testing.T) {
 	for _, p := range result {
 		switch p.Denom {
 		case "ukrw":
-			assert.InDelta(t, 0.00075, p.Price, 0.0001)
+			// KRW/USD = 0.00075, so USD/KRW = 1/0.00075 = 1333.33
+			// KRW/LUNC = 1333.33 * 0.0001 = 0.1333
+			expected := (1.0 / 0.00075) * luncUSD
+			assert.InDelta(t, expected, p.Price, 0.001)
 		case "uusd":
-			assert.InDelta(t, 1.0, p.Price, 0.0001)
+			// USD/LUNC = 1.0 * luncUSD = 0.0001
+			expected := 1.0 * luncUSD
+			assert.InDelta(t, expected, p.Price, 0.00001)
 		default:
 			t.Errorf("unexpected denom: %s", p.Denom)
 		}
@@ -264,6 +274,7 @@ func TestWhitelistFiltering(t *testing.T) {
 
 	// Comprehensive price map with various denoms
 	prices := map[string]decimal.Decimal{
+		"LUNC/USD": decimal.NewFromFloat(0.0001),
 		"KRW/USD":  decimal.NewFromFloat(0.00075),
 		"USD":      decimal.NewFromFloat(1.0),
 		"SDR/USD":  decimal.NewFromFloat(1.35),
@@ -325,6 +336,7 @@ func TestMetaDenomHandling(t *testing.T) {
 	v := &Voter{}
 
 	prices := map[string]decimal.Decimal{
+		"LUNC/USD": decimal.NewFromFloat(0.0001),
 		"USTC/USD": decimal.NewFromFloat(0.02),
 		"USD":      decimal.NewFromFloat(1.0),
 	}
@@ -349,38 +361,39 @@ func TestMetaDenomHandling(t *testing.T) {
 	assert.True(t, ustFound, "UST meta-denom should be present")
 }
 
-// TestPriceConversion verifies decimal to float64 conversion is correct.
+// TestPriceConversion verifies decimal to float64 conversion and LUNC price scaling.
 func TestPriceConversion(t *testing.T) {
 	v := &Voter{}
+	luncUSD := 0.0001
 
 	tests := []struct {
 		name     string
-		input    decimal.Decimal
-		expected float64
+		input    float64
+		expected float64 // expected output after LUNC conversion
 		delta    float64
 	}{
 		{
 			name:     "Small price (KRW)",
-			input:    decimal.NewFromFloat(0.00075),
-			expected: 0.00075,
-			delta:    0.0000001,
-		},
-		{
-			name:     "Large price (BTC)",
-			input:    decimal.NewFromFloat(50000.12345),
-			expected: 50000.12345,
+			input:    0.00075,
+			expected: (1.0 / 0.00075) * luncUSD, // (1 / input) * luncUSD
 			delta:    0.01,
 		},
 		{
+			name:     "Large price (BTC)",
+			input:    50000.12345,
+			expected: (1.0 / 50000.12345) * luncUSD,
+			delta:    0.0000001,
+		},
+		{
 			name:     "SDR price",
-			input:    decimal.NewFromFloat(1.35958),
-			expected: 1.35958,
+			input:    1.35958,
+			expected: (1.0 / 1.35958) * luncUSD,
 			delta:    0.00001,
 		},
 		{
 			name:     "Exact 1.0",
-			input:    decimal.NewFromFloat(1.0),
-			expected: 1.0,
+			input:    1.0,
+			expected: 1.0 * luncUSD, // 1.0 * 0.0001 = 0.0001
 			delta:    0.0,
 		},
 	}
@@ -388,7 +401,8 @@ func TestPriceConversion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			prices := map[string]decimal.Decimal{
-				"TEST/USD": tt.input,
+				"LUNC/USD": decimal.NewFromFloat(luncUSD),
+				"TEST/USD": decimal.NewFromFloat(tt.input),
 			}
 			whitelist := []string{"utest"}
 

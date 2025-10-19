@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	oracletypes "github.com/classic-terra/core/v3/x/oracle/types"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	oracletypes "github.com/classic-terra/core/v3/x/oracle/types"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txservice "github.com/cosmos/cosmos-sdk/types/tx"
@@ -87,10 +87,10 @@ func NewClient(cfg Config) (*Client, error) {
 
 	conns := make([]*grpc.ClientConn, len(cfg.Endpoints))
 	endpoints := make([]string, len(cfg.Endpoints))
-	
+
 	for i, epCfg := range cfg.Endpoints {
 		endpoints[i] = epCfg.Address
-		
+
 		var transportCreds grpc.DialOption
 		if epCfg.TLS {
 			transportCreds = grpc.WithTransportCredentials(
@@ -102,7 +102,7 @@ func NewClient(cfg Config) (*Client, error) {
 		} else {
 			transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 		}
-		
+
 		conn, err := grpc.NewClient(epCfg.Address, transportCreds)
 		if err != nil {
 			// Close any successful connections before returning
@@ -225,7 +225,7 @@ func WithFailover[T any](c *Client, call func() (T, error)) (T, error) {
 }
 
 // WithFailoverRetry wraps an RPC call with automatic failover and configurable retries.
-// 
+//
 // Parameters:
 //   - call: The RPC function to execute
 //   - maxAttempts: Maximum number of attempts (0 = number of endpoints, no retries)
@@ -243,7 +243,7 @@ func WithFailover[T any](c *Client, call func() (T, error)) (T, error) {
 //	}, 10)
 func WithFailoverRetry[T any](c *Client, call func() (T, error), maxAttempts int) (T, error) {
 	var zero T
-	
+
 	// Default maxAttempts to number of endpoints (one try per endpoint, no retries)
 	if maxAttempts == 0 {
 		maxAttempts = len(c.endpoints)
@@ -274,7 +274,7 @@ func WithFailoverRetry[T any](c *Client, call func() (T, error), maxAttempts int
 		if isLastAttempt && !isTransientError {
 			logEvent = c.logger.Error()
 		}
-		
+
 		logEvent.
 			Err(err).
 			Str("endpoint", c.CurrentEndpoint()).

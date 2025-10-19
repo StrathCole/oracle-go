@@ -82,7 +82,7 @@ func BuildExchangeRatesString(prices map[string]decimal.Decimal) string {
 }
 
 // BuildPrevote creates a prevote message with hash commitment.
-func BuildPrevote(salt string, exchangeRates string, validator string, feeder string) *ExchangeRatePrevote {
+func BuildPrevote(salt, exchangeRates, validator, feeder string) *ExchangeRatePrevote {
 	// Hash format: SHA256(salt + exchange_rates + validator)
 	// This matches Terra Classic oracle module expected format
 	preimage := salt + ":" + exchangeRates + ":" + validator
@@ -98,7 +98,7 @@ func BuildPrevote(salt string, exchangeRates string, validator string, feeder st
 }
 
 // BuildVote creates a vote message (reveal of prevote).
-func BuildVote(salt string, exchangeRates string, validator string, feeder string) *ExchangeRateVote {
+func BuildVote(salt, exchangeRates, validator, feeder string) *ExchangeRateVote {
 	return &ExchangeRateVote{
 		ExchangeRates: exchangeRates,
 		Salt:          salt,

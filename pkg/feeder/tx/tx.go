@@ -177,7 +177,7 @@ func EstimateGas(numMsgs int) uint64 {
 // Terra Classic uses uluna as the fee denomination.
 //
 // Returns the fee as sdk.Coins.
-func CalculateFee(gasLimit uint64, gasPriceStr string, feeDenom string) (sdk.Coins, error) {
+func CalculateFee(gasLimit uint64, gasPriceStr, feeDenom string) (sdk.Coins, error) {
 	// Parse gas price
 	gasPrice, err := sdk.NewDecFromStr(gasPriceStr)
 	if err != nil {

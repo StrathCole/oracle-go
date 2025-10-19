@@ -50,11 +50,12 @@ func TestCoinGeckoSource_NewSource(t *testing.T) {
 			checkFunc: func(t *testing.T, s sources.Source) {
 				t.Helper()
 				cg := s.(*CoinGeckoSource)
-				if cg.apiKey != "test-key" {
-					t.Errorf("Expected API key 'test-key', got %q", cg.apiKey)
+				if cg.apiKey != "test_api_key_123" {
+					t.Errorf("Expected API key 'test_api_key_123', got %q", cg.apiKey)
 				}
-				if cg.minInterval != 10*time.Second {
-					t.Errorf("Expected min interval 10s, got %v", cg.minInterval)
+				// minInterval is set to coingeckoProMinInterval (2s) when API key is provided
+				if cg.minInterval != 2*time.Second {
+					t.Errorf("Expected min interval 2s (pro API), got %v", cg.minInterval)
 				}
 			},
 		},

@@ -14,10 +14,8 @@ import (
 	"github.com/cosmos/go-bip39"
 )
 
-var (
-	// ErrKeyNotFound is returned when a key is not found in the keystore.
-	ErrKeyNotFound = errors.New("key not found")
-)
+// ErrKeyNotFound is returned when a key is not found in the keystore.
+var ErrKeyNotFound = errors.New("key not found")
 
 var _ keyring.Keyring = (*privKeyKeyring)(nil)
 
@@ -38,7 +36,7 @@ type privKeyKeyring struct {
 // The HD derivation path should be in format: m/44'/cointype'/account'/change/index
 // For Terra Classic: m/44'/330'/0'/0/0
 // For standard Cosmos: m/44'/118'/0'/0/0.
-func GetAuth(mnemonic string, hdPath string) (keyring.Keyring, sdk.ValAddress, sdk.AccAddress) {
+func GetAuth(mnemonic, hdPath string) (keyring.Keyring, sdk.ValAddress, sdk.AccAddress) {
 	// Default to Terra Classic path if not specified
 	if hdPath == "" {
 		hdPath = "m/44'/330'/0'/0/0"
@@ -111,7 +109,7 @@ func (p privKeyKeyring) Backend() string {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) Rename(_ string, _ string) error {
+func (p privKeyKeyring) Rename(_, _ string) error {
 	panic("must never be called")
 }
 
@@ -132,19 +130,19 @@ func (p privKeyKeyring) DeleteByAddress(_ sdk.Address) error {
 }
 
 func (p privKeyKeyring) NewMnemonic(
-	_ string, _ keyring.Language, _ string, _ string, _ keyring.SignatureAlgo,
+	_ string, _ keyring.Language, _, _ string, _ keyring.SignatureAlgo,
 ) (*keyring.Record, string, error) {
 	panic("must never be called")
 }
 
 func (p privKeyKeyring) NewAccount(
-	_ string, _ string, _ string, _ string, _ keyring.SignatureAlgo,
+	_, _, _, _ string, _ keyring.SignatureAlgo,
 ) (*keyring.Record, error) {
 	panic("must never be called")
 }
 
 func (p privKeyKeyring) SaveLedgerKey(
-	_ string, _ keyring.SignatureAlgo, _ string, _ uint32, _ uint32, _ uint32,
+	_ string, _ keyring.SignatureAlgo, _ string, _, _, _ uint32,
 ) (*keyring.Record, error) {
 	panic("must never be called")
 }

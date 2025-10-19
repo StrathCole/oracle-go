@@ -142,7 +142,7 @@ func (s *SDRSource) calculateSDR(ctx context.Context) error {
 	}
 
 	// Calculate SDR value: SDR/USD = Σ(currency_amount × exchange_rate)
-	var sdrValue = decimal.Zero
+	sdrValue := decimal.Zero
 
 	for currency, amount := range sdrBasketAmounts {
 		rate := rates[currency]

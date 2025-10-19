@@ -8,15 +8,18 @@ import (
 	"tc.com/oracle-prices/pkg/logging"
 )
 
-// GetLoggerFromConfig extracts logger from config map or returns nil.
+// GetLoggerFromConfig extracts logger from config map or returns a default noop logger.
 // Sources should use this to get the logger passed from main.go.
+// If no logger is configured, returns a noop logger to prevent nil pointer dereferences.
 func GetLoggerFromConfig(config map[string]interface{}) *logging.Logger {
 	if loggerInterface, ok := config["logger"]; ok {
 		if logger, ok := loggerInterface.(*logging.Logger); ok {
 			return logger
 		}
 	}
-	return nil
+
+	// return default noop logger if logger not found
+	return logging.NewNoopLogger()
 }
 
 // ParsePairsFromMap extracts pair mappings from config where pairs is a map.

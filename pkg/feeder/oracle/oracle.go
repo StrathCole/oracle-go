@@ -14,11 +14,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-var (
-	// MaxSaltNumber is the maximum salt number we can use for randomness.
-	// Salt length is limited to 4 characters by the oracle module.
-	MaxSaltNumber = big.NewInt(9999)
-)
+// MaxSaltNumber is the maximum salt number we can use for randomness.
+// Salt length is limited to 4 characters by the oracle module.
+var MaxSaltNumber = big.NewInt(9999)
 
 // Price represents a price for a specific denomination.
 type Price struct {

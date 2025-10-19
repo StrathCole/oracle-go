@@ -100,7 +100,7 @@ func applyDefaults(cfg *Config) {
 }
 
 // GetString retrieves a string value from the source configuration.
-func (sc *SourceConfig) GetString(key string, defaultValue string) string {
+func (sc *SourceConfig) GetString(key, defaultValue string) string {
 	if val, ok := sc.Config[key]; ok {
 		if str, ok := val.(string); ok {
 			return str

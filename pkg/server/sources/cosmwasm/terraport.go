@@ -195,6 +195,7 @@ func (s *TerraportSource) fetchPrices(ctx context.Context) error {
 }
 
 // fetchPairPrice queries a single pair contract for reserves and calculates price using gRPC.
+//
 //nolint:dupl
 func (s *TerraportSource) fetchPairPrice(ctx context.Context, pair TerraportPair) (decimal.Decimal, error) {
 	// Build query message

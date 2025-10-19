@@ -335,7 +335,7 @@ func TestValidateSymbolFormat(t *testing.T) {
 			name:    "invalid: empty string",
 			symbol:  "",
 			wantErr: true,
-			errMsg:  "cannot be empty",
+			errMsg:  "must be in BASE/QUOTE format",
 		},
 		{
 			name:    "invalid: empty base",

@@ -3,7 +3,5 @@ package eventstream
 
 import "errors"
 
-var (
-	// ErrNoConnection indicates that there is no active WebSocket connection.
-	ErrNoConnection = errors.New("no connection")
-)
+// ErrNoConnection indicates that there is no active WebSocket connection.
+var ErrNoConnection = errors.New("no connection")

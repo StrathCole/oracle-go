@@ -13,7 +13,7 @@ A production-ready oracle feeder for Terra Classic validators. Single Go binary,
 ```bash
 git clone https://github.com/StrathCole/oracle-go.git
 cd oracle-go
-go build -o oracle-go ./cmd/oracle-go
+make build
 ```
 
 ### 2. Configure
@@ -53,7 +53,13 @@ feeder:
   mnemonic_env: ORACLE_MNEMONIC
 
   grpc_endpoints:
-    - host: lcd.terraclassic.community:443
+    - host: terra-classic-grpc.publicnode.com
+      port: 443
+      tls: true
+    
+  rpc_endpoints:
+    - host: terra-classic-rpc.publicnode.com
+      port: 443
       tls: true
 
 sources:
@@ -214,31 +220,52 @@ curl http://localhost:9091/metrics | grep oracle_
 
 ### CEX Sources
 
-| Exchange | WebSocket | Rate Limit | Notes |
-|----------|-----------|------------|-------|
-| **Binance** | ✅ | High | Primary LUNC source |
-| **CoinGecko** | ❌ | Medium | Free: 10-30 calls/min |
-| **Kraken** | ❌ | Medium | Good for BTC/ETH |
-| **Kucoin** | ❌ | Medium | LUNC trading pairs |
+| Exchange | WebSocket | Notes |
+|----------|-----------|-------|
+| **Binance** | ✅ | Primary LUNC source |
+| **CoinGecko** | ❌ | Free: 10-30 calls/min |
+| **Kraken** | ❌ | Good for BTC/ETH |
+| **Kucoin** | ❌ | LUNC trading pairs |
+| **Huobi** | ❌ | Asia-focused |
+| **Bitfinex** | ❌ | BTC/ETH only |
+| **Bybit** | ❌ | Derivatives focus |
+| **Gate.io** | ❌ | Wide altcoin range |
+| **OKX** | ❌ | No LUNC pairs |
+| **MEXC** | ✅ | Emerging altcoins |
+| **CoinMarketCap** | ❌ | API key required |
 
 ### DEX Sources (CosmWasm)
 
-| DEX | Symbol | Contract |
-|-----|--------|----------|
-| **Terraswap** | LUNC/USTC | terra1tndcaqxkpc5ce9qee5ggqf430mr2z3pefe5wj6 |
-| **Terraport** | LUNC/USTC | Multiple contracts |
+| DEX | Symbol |
+|-----|--------|
+| **Terraswap** | LUNC/USDC |
+| **Terraport** | LUNC/USDC |
+| **Garuda** | LUNC/USDC |
+
+### DEX Sources (EVM)
+
+| DEX | Symbol |
+|-----|--------|
+| **PancakeSwap** | LUNC/USDT |
 
 ### Fiat Sources
 
-| Source | Currencies | Free Tier |
-|--------|------------|-----------|
-| **ExchangeRate-API** | 160+ | ✅ 1500/month |
-| **Fixer** | 170+ | ✅ 100/month |
-| **Frankfurter** | 30+ | ✅ Unlimited |
+| Source | Notes |
+|--------| ------- |
+| **ExchangeRate-API** | Free tier: 1500 requests/month |
+| **Fixer** | API key required |
+| **Frankfurter** | Free, no key |
+| **IMF** | Free, no key, web-scraper |
 
 ### SDR (Special Drawing Rights)
 
 Automatically calculated from IMF rates (USD, EUR, CNY, JPY, GBP).
+
+### Oracle aggregators
+
+| Aggregator | Notes |
+|------------|-------|
+| **Band Protocol** | Decentralized oracle |
 
 </details>
 
@@ -246,11 +273,11 @@ Automatically calculated from IMF rates (USD, EUR, CNY, JPY, GBP).
 
 ## 🔧 Troubleshooting
 
-### LCD Connection Failed
+### RPC/gRPC Connection Failed
 
 ```bash
 # Check endpoint
-curl https://lcd.terraclassic.community/cosmos/base/tendermint/v1beta1/node_info
+curl https://terra-classic-lcd.publicnode.com/cosmos/base/tendermint/v1beta1/node_info
 # Add multiple fallback endpoints
 ```
 
@@ -259,15 +286,6 @@ curl https://lcd.terraclassic.community/cosmos/base/tendermint/v1beta1/node_info
 - Verify 12 or 24 words
 - Check `coin_type: 330` (Terra Classic)
 - Ensure env var set: `echo $ORACLE_MNEMONIC`
-
-### Vote Transaction Failed
-
-```yaml
-feeder:
-  gas_price: "50uluna"    # Increase from default
-  # OR
-  fee_amount: "150000uluna"
-```
 
 ### No Whitelisted Prices
 
@@ -303,11 +321,18 @@ feeder:
   verify: true  # Compare with on-chain rates
 ```
 
+or
+
+```bash
+./build/oracle-go --feeder --dry-run
+```
+
 This will:
 
-- ✅ Connect to LCD
+- ✅ Connect to RPC/gRPC
 - ✅ Fetch prices
 - ✅ Generate vote messages
+- ✅ Verify against on-chain rates
 - ❌ NOT submit transactions
 
 ---
@@ -319,35 +344,10 @@ This will:
 ```bash
 git clone https://github.com/StrathCole/oracle-go.git
 cd oracle-go
-go mod download
+go mod tidy
 go build -o oracle-go ./cmd/oracle-go
 go test ./...              # Run tests
 go run -race ./cmd/oracle-go  # Race detection
-```
-
-### Project Structure
-
-```text
-oracle-go/
-├── cmd/oracle-go/              # CLI entrypoint
-├── pkg/
-│   ├── config/                 # Configuration loading
-│   ├── logging/                # Structured logging
-│   ├── metrics/                # Prometheus metrics
-│   ├── server/                 # Price server
-│   │   ├── sources/            # 20+ price sources
-│   │   │   ├── cex/            # Centralized exchanges
-│   │   │   ├── cosmwasm/       # DEX (Terraswap, Terraport)
-│   │   │   ├── evm/            # PancakeSwap
-│   │   │   ├── oracle/         # Band Protocol
-│   │   │   └── fiat/           # Fiat currencies
-│   │   └── aggregator/         # Median + outlier detection
-│   └── feeder/                 # Oracle feeder
-│       ├── voter/              # Voting state machine
-│       ├── client/             # LCD failover
-│       ├── keystore/           # Key management
-│       └── oracle/             # Message builders
-└── config/config.yaml
 ```
 
 ### Adding a New Price Source
@@ -379,12 +379,12 @@ func (s *NewSource) Stop() error {
 
 2. **Register:**
 
+Add to `registration.go` in `init()` function:
+
 ```go
-func init() {
     sources.Register("cex.newsource", func(cfg map[string]interface{}) (sources.Source, error) {
         return NewNewSource(cfg)
     })
-}
 ```
 
 3. **Add to config:**
