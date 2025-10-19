@@ -345,9 +345,9 @@ This will:
 git clone https://github.com/StrathCole/oracle-go.git
 cd oracle-go
 go mod tidy
-go build -o oracle-go ./cmd/oracle-go
-go test ./...              # Run tests
-go run -race ./cmd/oracle-go  # Race detection
+make build
+make test              # Run tests
+./build/oracle-go 
 ```
 
 ### Adding a New Price Source
@@ -479,14 +479,12 @@ sources:
 
 ```bash
 # Run tests
-go test ./...
-go test -cover ./...
-go test ./pkg/server/sources/...
+make test
+make test-integration # including network calls, might fail
 
 # Linting
 make lint              # golangci-lint (25+ linters)
 make fmt               # gofumpt formatting
-make ci                # All checks (format, lint, test)
 
 # Pre-commit
 make fmt && make lint && make test
