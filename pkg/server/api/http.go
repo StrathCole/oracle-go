@@ -113,8 +113,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		metrics.RecordHTTPRequest("/health", "200", time.Since(start))
 	}()
 
+	// Return JSON for consistency with documentation
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("OK"))
+
+	response := map[string]string{
+		"status": "ok",
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("Failed to encode health response", "error", err)
+	}
 }
 
 // handlePrices handles /v1/prices and /latest endpoints.
