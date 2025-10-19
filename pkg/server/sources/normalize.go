@@ -1,24 +1,30 @@
+// Package sources provides price source interfaces and implementations.
 package sources
 
 import (
 	"strings"
 )
 
-// Symbol normalization maps trading pairs to oracle canonical pairs
-// This ensures that LUNC/USDT, LUNC/USD, LUNC/USDC all map to the same oracle symbol
+// Symbol normalization maps trading pairs to oracle canonical pairs.
+// This ensures that LUNC/USDT, LUNC/USD, LUNC/USDC all map to the same oracle symbol.
 
-// Stablecoin aliases - all considered equivalent to USD
+const (
+	// oracleUSD is the canonical USD symbol for oracle pairs.
+	oracleUSD = "USD"
+)
+
+// Stablecoin aliases - all considered equivalent to USD.
 var stablecoinAliases = map[string]string{
-	"USDT": "USD",
-	"USDC": "USD",
-	"BUSD": "USD",
-	"DAI":  "USD",
-	"TUSD": "USD",
-	"USDD": "USD",
-	"USDP": "USD",
+	"USDT": oracleUSD,
+	"USDC": oracleUSD,
+	"BUSD": oracleUSD,
+	"DAI":  oracleUSD,
+	"TUSD": oracleUSD,
+	"USDD": oracleUSD,
+	"USDP": oracleUSD,
 }
 
-// Base currency aliases
+// Base currency aliases.
 var baseCurrencyAliases = map[string]string{
 	"WBTC":  "BTC",
 	"WETH":  "ETH",
@@ -31,7 +37,7 @@ var baseCurrencyAliases = map[string]string{
 //   - BTC/USDC -> BTC/USD
 //   - ETH/USDT -> ETH/USD
 //   - WBTC/USD -> BTC/USD
-//   - LUNC/EUR -> LUNC/EUR (no change)
+//   - LUNC/EUR -> LUNC/EUR (no change).
 func NormalizeSymbol(symbol string) string {
 	parts := strings.Split(symbol, "/")
 	if len(parts) != 2 {
@@ -54,8 +60,8 @@ func NormalizeSymbol(symbol string) string {
 	return base + "/" + quote
 }
 
-// GetSymbolAliases returns all known aliases for a canonical symbol
-// For example, LUNC/USD would return [LUNC/USD, LUNC/USDT, LUNC/USDC, LUNC/BUSD, etc.]
+// GetSymbolAliases returns all known aliases for a canonical symbol.
+// For example, LUNC/USD would return [LUNC/USD, LUNC/USDT, LUNC/USDC, LUNC/BUSD, etc.].
 func GetSymbolAliases(canonicalSymbol string) []string {
 	parts := strings.Split(canonicalSymbol, "/")
 	if len(parts) != 2 {
@@ -68,9 +74,9 @@ func GetSymbolAliases(canonicalSymbol string) []string {
 	aliases := []string{canonicalSymbol}
 
 	// If the quote is USD, add all stablecoin variants
-	if quote == "USD" {
+	if quote == oracleUSD {
 		for stablecoin := range stablecoinAliases {
-			if stablecoin != "USD" {
+			if stablecoin != oracleUSD {
 				aliases = append(aliases, base+"/"+stablecoin)
 			}
 		}
@@ -81,9 +87,9 @@ func GetSymbolAliases(canonicalSymbol string) []string {
 		if canonical == base {
 			aliases = append(aliases, wrapped+"/"+quote)
 			// Also add wrapped + stablecoin combos if quote is USD
-			if quote == "USD" {
+			if quote == oracleUSD {
 				for stablecoin := range stablecoinAliases {
-					if stablecoin != "USD" {
+					if stablecoin != oracleUSD {
 						aliases = append(aliases, wrapped+"/"+stablecoin)
 					}
 				}
@@ -94,7 +100,7 @@ func GetSymbolAliases(canonicalSymbol string) []string {
 	return aliases
 }
 
-// IsEquivalentSymbol checks if two symbols are equivalent after normalization
+// IsEquivalentSymbol checks if two symbols are equivalent after normalization.
 func IsEquivalentSymbol(symbol1, symbol2 string) bool {
 	return NormalizeSymbol(symbol1) == NormalizeSymbol(symbol2)
 }

@@ -19,14 +19,14 @@ const (
 	gateioPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// GateioSource fetches prices from Gate.io REST API
+// GateioSource fetches prices from Gate.io REST API.
 type GateioSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// GateioTicker represents a ticker response from Gate.io
+// GateioTicker represents a ticker response from Gate.io.
 type GateioTicker struct {
 	CurrencyPair     string `json:"currency_pair"`
 	Last             string `json:"last"`
@@ -39,7 +39,7 @@ type GateioTicker struct {
 	Low24h           string `json:"low_24h"`
 }
 
-// NewGateioSource creates a new Gate.io REST source
+// NewGateioSource creates a new Gate.io REST source.
 func NewGateioSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -63,13 +63,13 @@ func NewGateioSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *GateioSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *GateioSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Gate.io source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *GateioSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Gate.io source")
 
@@ -84,28 +84,28 @@ func (s *GateioSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *GateioSource) Stop() error {
 	s.Logger().Info("Gate.io source stopped")
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *GateioSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *GateioSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *GateioSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *GateioSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(gateioPollRate)
 	defer ticker.Stop()
@@ -131,7 +131,7 @@ func (s *GateioSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from Gate.io API
+// fetchPrices fetches current prices from Gate.io API.
 func (s *GateioSource) fetchPrices(ctx context.Context) error {
 	// Make request (returns all tickers)
 	req, err := http.NewRequestWithContext(ctx, "GET", s.apiURL, nil)
@@ -143,16 +143,16 @@ func (s *GateioSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -199,10 +199,4 @@ func (s *GateioSource) fetchPrices(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func init() {
-	sources.Register("cex.gateio", func(config map[string]interface{}) (sources.Source, error) {
-		return NewGateioSource(config)
-	})
 }

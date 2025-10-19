@@ -1,3 +1,4 @@
+// Package cosmwasm provides CosmWasm-based price sources.
 package cosmwasm
 
 import (
@@ -9,19 +10,19 @@ import (
 )
 
 var (
-	// Global gRPC client for CosmWasm sources
+	// Global gRPC client for CosmWasm sources.
 	globalGRPCClient *client.Client
 	clientMu         sync.RWMutex
 )
 
-// SetGRPCClient sets the global gRPC client for CosmWasm sources
+// SetGRPCClient sets the global gRPC client for CosmWasm sources.
 func SetGRPCClient(c *client.Client) {
 	clientMu.Lock()
 	defer clientMu.Unlock()
 	globalGRPCClient = c
 }
 
-// GetGRPCClient returns the global gRPC client
+// GetGRPCClient returns the global gRPC client.
 func GetGRPCClient() *client.Client {
 	clientMu.RLock()
 	defer clientMu.RUnlock()
@@ -29,11 +30,11 @@ func GetGRPCClient() *client.Client {
 }
 
 func init() {
-	// Register CosmWasm sources with factory functions that use the global gRPC client
+	// Register CosmWasm sources with factory functions that use the global gRPC client.
 	sources.Register("cosmwasm.terraport", func(config map[string]interface{}) (sources.Source, error) {
 		grpcClient := GetGRPCClient()
 		if grpcClient == nil {
-			return nil, fmt.Errorf("gRPC client not initialized for CosmWasm sources")
+			return nil, fmt.Errorf("%w", ErrGRPCNotInitialized)
 		}
 		return NewTerraportSource(config, grpcClient)
 	})
@@ -41,7 +42,7 @@ func init() {
 	sources.Register("cosmwasm.terraswap", func(config map[string]interface{}) (sources.Source, error) {
 		grpcClient := GetGRPCClient()
 		if grpcClient == nil {
-			return nil, fmt.Errorf("gRPC client not initialized for CosmWasm sources")
+			return nil, fmt.Errorf("%w", ErrGRPCNotInitialized)
 		}
 		return NewTerraswapSource(config, grpcClient)
 	})
@@ -49,7 +50,7 @@ func init() {
 	sources.Register("cosmwasm.garuda", func(config map[string]interface{}) (sources.Source, error) {
 		grpcClient := GetGRPCClient()
 		if grpcClient == nil {
-			return nil, fmt.Errorf("gRPC client not initialized for CosmWasm sources")
+			return nil, fmt.Errorf("%w", ErrGRPCNotInitialized)
 		}
 		return NewGarudaSource(config, grpcClient)
 	})

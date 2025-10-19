@@ -12,17 +12,17 @@ import (
 )
 
 const (
-	// maxReconnectBackoff is the maximum wait time between reconnection attempts
+	// maxReconnectBackoff is the maximum wait time between reconnection attempts.
 	maxReconnectBackoff = 30 * time.Second
-	// initialReconnectBackoff is the starting backoff duration
+	// initialReconnectBackoff is the starting backoff duration.
 	initialReconnectBackoff = 1 * time.Second
-	// pingInterval is how often to send ping messages
+	// pingInterval is how often to send ping messages.
 	pingInterval = 30 * time.Second
-	// pongTimeout is how long to wait for pong response
+	// pongTimeout is how long to wait for pong response.
 	pongTimeout = 60 * time.Second
 )
 
-// Websocket manages a connection to Tendermint RPC WebSocket endpoint
+// Websocket manages a connection to Tendermint RPC WebSocket endpoint.
 type Websocket struct {
 	url            string
 	subscribeMsg   interface{}
@@ -34,7 +34,7 @@ type Websocket struct {
 	reconnectDelay time.Duration
 }
 
-// NewWebsocket creates a new WebSocket client
+// NewWebsocket creates a new WebSocket client.
 func NewWebsocket(url string, subscribeMsg interface{}, logger zerolog.Logger) *Websocket {
 	return &Websocket{
 		url:            url,
@@ -46,7 +46,7 @@ func NewWebsocket(url string, subscribeMsg interface{}, logger zerolog.Logger) *
 	}
 }
 
-// Start begins the WebSocket connection loop with reconnection
+// Start begins the WebSocket connection loop with reconnection.
 func (w *Websocket) Start(ctx context.Context) error {
 	w.logger.Info().Str("url", w.url).Msg("starting websocket client")
 
@@ -54,7 +54,7 @@ func (w *Websocket) Start(ctx context.Context) error {
 	return nil
 }
 
-// loop maintains the WebSocket connection with automatic reconnection
+// loop maintains the WebSocket connection with automatic reconnection.
 func (w *Websocket) loop(ctx context.Context) {
 	for {
 		select {
@@ -92,7 +92,7 @@ func (w *Websocket) loop(ctx context.Context) {
 	}
 }
 
-// connect establishes WebSocket connection and sends subscribe message
+// connect establishes WebSocket connection and sends subscribe message.
 func (w *Websocket) connect(ctx context.Context) error {
 	w.logger.Info().Str("url", w.url).Msg("connecting to websocket")
 
@@ -107,7 +107,7 @@ func (w *Websocket) connect(ctx context.Context) error {
 
 	// Send subscription message
 	if err := conn.WriteJSON(w.subscribeMsg); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("failed to send subscribe message: %w", err)
 	}
 
@@ -115,24 +115,24 @@ func (w *Websocket) connect(ctx context.Context) error {
 	return nil
 }
 
-// readLoop reads messages from the WebSocket connection
+// readLoop reads messages from the WebSocket connection.
 func (w *Websocket) readLoop(ctx context.Context) error {
 	w.mu.RLock()
 	conn := w.conn
 	w.mu.RUnlock()
 
 	if conn == nil {
-		return fmt.Errorf("no connection")
+		return fmt.Errorf("%w", ErrNoConnection)
 	}
 
 	// Set up pong handler
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	conn.SetPongHandler(func(_ string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
 
 	// Set initial read deadline
-	conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	_ = conn.SetReadDeadline(time.Now().Add(pongTimeout))
 
 	// Start ping ticker
 	pingTicker := time.NewTicker(pingInterval)
@@ -189,12 +189,12 @@ func (w *Websocket) readLoop(ctx context.Context) error {
 	}
 }
 
-// Messages returns the channel for receiving WebSocket messages
+// Messages returns the channel for receiving WebSocket messages.
 func (w *Websocket) Messages() <-chan []byte {
 	return w.messages
 }
 
-// Close closes the WebSocket connection
+// Close closes the WebSocket connection.
 func (w *Websocket) Close() {
 	close(w.closed)
 
@@ -202,7 +202,7 @@ func (w *Websocket) Close() {
 	defer w.mu.Unlock()
 
 	if w.conn != nil {
-		w.conn.Close()
+		_ = w.conn.Close()
 		w.conn = nil
 	}
 }

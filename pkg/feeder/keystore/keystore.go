@@ -1,7 +1,9 @@
+// Package keystore provides key management functionality.
 package keystore
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -10,6 +12,11 @@ import (
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
+)
+
+var (
+	// ErrKeyNotFound is returned when a key is not found in the keystore.
+	ErrKeyNotFound = errors.New("key not found")
 )
 
 var _ keyring.Keyring = (*privKeyKeyring)(nil)
@@ -30,7 +37,7 @@ type privKeyKeyring struct {
 // Returns the keyring, validator address, and account address.
 // The HD derivation path should be in format: m/44'/cointype'/account'/change/index
 // For Terra Classic: m/44'/330'/0'/0/0
-// For standard Cosmos: m/44'/118'/0'/0/0
+// For standard Cosmos: m/44'/118'/0'/0/0.
 func GetAuth(mnemonic string, hdPath string) (keyring.Keyring, sdk.ValAddress, sdk.AccAddress) {
 	// Default to Terra Classic path if not specified
 	if hdPath == "" {
@@ -66,28 +73,28 @@ func newPrivKeyKeyring(hexKey string) *privKeyKeyring {
 }
 
 // Key returns the record for the given key name.
-func (p privKeyKeyring) Key(uid string) (*keyring.Record, error) {
+func (p privKeyKeyring) Key(_ string) (*keyring.Record, error) {
 	return p.KeyByAddress(p.addr)
 }
 
 // KeyByAddress returns the record for the given address.
 func (p privKeyKeyring) KeyByAddress(address sdk.Address) (*keyring.Record, error) {
 	if !address.Equals(p.addr) {
-		return nil, fmt.Errorf("key not found: %s", address)
+		return nil, fmt.Errorf("%w: %s", ErrKeyNotFound, address)
 	}
 
 	return keyring.NewLocalRecord(p.addr.String(), p.privKey, p.pubKey)
 }
 
 // Sign signs a message with the keyring's private key.
-func (p privKeyKeyring) Sign(uid string, msg []byte) ([]byte, cryptotypes.PubKey, error) {
+func (p privKeyKeyring) Sign(_ string, msg []byte) ([]byte, cryptotypes.PubKey, error) {
 	return p.SignByAddress(p.addr, msg)
 }
 
 // SignByAddress signs a message with the private key associated with the given address.
 func (p privKeyKeyring) SignByAddress(address sdk.Address, msg []byte) ([]byte, cryptotypes.PubKey, error) {
 	if !p.addr.Equals(address) {
-		return nil, nil, fmt.Errorf("key not found")
+		return nil, nil, fmt.Errorf("%w", ErrKeyNotFound)
 	}
 
 	signed, err := p.privKey.Sign(msg)
@@ -104,7 +111,7 @@ func (p privKeyKeyring) Backend() string {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) Rename(from string, to string) error {
+func (p privKeyKeyring) Rename(_ string, _ string) error {
 	panic("must never be called")
 }
 
@@ -116,59 +123,59 @@ func (p privKeyKeyring) SupportedAlgorithms() (keyring.SigningAlgoList, keyring.
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) Delete(uid string) error {
+func (p privKeyKeyring) Delete(_ string) error {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) DeleteByAddress(address sdk.Address) error {
+func (p privKeyKeyring) DeleteByAddress(_ sdk.Address) error {
 	panic("must never be called")
 }
 
 func (p privKeyKeyring) NewMnemonic(
-	uid string, language keyring.Language, hdPath, bip39Passphrase string, algo keyring.SignatureAlgo,
+	_ string, _ keyring.Language, _ string, _ string, _ keyring.SignatureAlgo,
 ) (*keyring.Record, string, error) {
 	panic("must never be called")
 }
 
 func (p privKeyKeyring) NewAccount(
-	uid, mnemonic, bip39Passphrase, hdPath string, algo keyring.SignatureAlgo,
+	_ string, _ string, _ string, _ string, _ keyring.SignatureAlgo,
 ) (*keyring.Record, error) {
 	panic("must never be called")
 }
 
 func (p privKeyKeyring) SaveLedgerKey(
-	uid string, algo keyring.SignatureAlgo, hrp string, coinType, account, index uint32,
+	_ string, _ keyring.SignatureAlgo, _ string, _ uint32, _ uint32, _ uint32,
 ) (*keyring.Record, error) {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) SaveOfflineKey(uid string, pubkey cryptotypes.PubKey) (*keyring.Record, error) {
+func (p privKeyKeyring) SaveOfflineKey(_ string, _ cryptotypes.PubKey) (*keyring.Record, error) {
 	panic("must never be called")
 }
 
 func (p privKeyKeyring) SavePubKey(
-	uid string, pubkey cryptotypes.PubKey, algo hd.PubKeyType,
+	_ string, _ cryptotypes.PubKey, _ hd.PubKeyType,
 ) (*keyring.Record, error) {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) SaveMultisig(uid string, pubkey cryptotypes.PubKey) (*keyring.Record, error) {
+func (p privKeyKeyring) SaveMultisig(_ string, _ cryptotypes.PubKey) (*keyring.Record, error) {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) ExportPubKeyArmor(uid string) (string, error) {
+func (p privKeyKeyring) ExportPubKeyArmor(_ string) (string, error) {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) ExportPubKeyArmorByAddress(address sdk.Address) (string, error) {
+func (p privKeyKeyring) ExportPubKeyArmorByAddress(_ sdk.Address) (string, error) {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) ExportPrivKeyArmor(uid, encryptPassphrase string) (armor string, err error) {
+func (p privKeyKeyring) ExportPrivKeyArmor(_, _ string) (string, error) {
 	panic("must never be called")
 }
 
-func (p privKeyKeyring) ExportPrivKeyArmorByAddress(address sdk.Address, encryptPassphrase string) (armor string, err error) {
+func (p privKeyKeyring) ExportPrivKeyArmorByAddress(_ sdk.Address, _ string) (string, error) {
 	panic("must never be called")
 }
 
@@ -176,24 +183,30 @@ func (p privKeyKeyring) ExportPrivKeyArmorByAddress(address sdk.Address, encrypt
 
 var _ keyring.Importer = (*ImporterNull)(nil)
 
+// ImporterNull is a stub implementation of keyring.Importer that panics on any call.
 type ImporterNull struct{}
 
-func (i ImporterNull) ImportPrivKey(uid, armor, passphrase string) error {
+// ImportPrivKey panics - not implemented.
+func (i ImporterNull) ImportPrivKey(_, _, _ string) error {
 	panic("must never be called")
 }
 
-func (i ImporterNull) ImportPrivKeyHex(uid, privKey, algoStr string) error {
+// ImportPrivKeyHex panics - not implemented.
+func (i ImporterNull) ImportPrivKeyHex(_, _, _ string) error {
 	panic("must never be called")
 }
 
-func (i ImporterNull) ImportPubKey(uid string, armor string) error {
+// ImportPubKey panics - not implemented.
+func (i ImporterNull) ImportPubKey(_, _ string) error {
 	panic("must never be called")
 }
 
 var _ keyring.Migrator = (*MigratorNull)(nil)
 
+// MigratorNull is a stub implementation of keyring.Migrator that panics on any call.
 type MigratorNull struct{}
 
+// MigrateAll panics - not implemented.
 func (m MigratorNull) MigrateAll() ([]*keyring.Record, error) {
 	panic("must never be called")
 }

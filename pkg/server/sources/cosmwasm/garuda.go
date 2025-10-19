@@ -16,7 +16,7 @@ const (
 	garudaUpdateInterval = 15 * time.Second
 )
 
-// GarudaSource fetches prices from Garuda DeFi DEX pairs via gRPC smart contract queries
+// GarudaSource fetches prices from Garuda DeFi DEX pairs via gRPC smart contract queries.
 type GarudaSource struct {
 	*sources.BaseSource
 	grpcClient     *client.Client
@@ -24,7 +24,7 @@ type GarudaSource struct {
 	pairs          []GarudaPair
 }
 
-// GarudaPairConfig represents configuration for a Garuda DeFi liquidity pair
+// GarudaPairConfig represents configuration for a Garuda DeFi liquidity pair.
 type GarudaPairConfig struct {
 	Symbol          string // e.g., "LUNC/USDC"
 	ContractAddress string // Garuda pair contract address
@@ -34,11 +34,11 @@ type GarudaPairConfig struct {
 	Decimals1       int    // Decimals for asset 1
 }
 
-// GarudaPair is an alias for GarudaPairConfig
+// GarudaPair is an alias for GarudaPairConfig.
 type GarudaPair = GarudaPairConfig
 
-// GarudaPoolResponse represents the response from querying a Garuda pair
-// Garuda uses a different format than Terraport/Terraswap
+// GarudaPoolResponse represents the response from querying a Garuda pair.
+// Garuda uses a different format than Terraport/Terraswap.
 type GarudaPoolResponse struct {
 	Asset1 struct {
 		Native string `json:"native,omitempty"`
@@ -54,7 +54,7 @@ type GarudaPoolResponse struct {
 	LiquidityToken string `json:"liquidity_token"`
 }
 
-// NewGarudaSource creates a new Garuda DeFi source using gRPC client
+// NewGarudaSource creates a new Garuda DeFi source using gRPC client.
 func NewGarudaSource(config map[string]interface{}, grpcClient *client.Client) (sources.Source, error) {
 	// Parse CosmWasm pairs configuration using helper
 	pairs, err := sources.ParseCosmWasmPairs(config)
@@ -62,42 +62,30 @@ func NewGarudaSource(config map[string]interface{}, grpcClient *client.Client) (
 		return nil, fmt.Errorf("failed to parse pairs: %w", err)
 	}
 
+	// Initialize base source using helper
+	base, updateInterval, err := InitializeCosmWasmBase(
+		"garuda",
+		sources.SourceTypeCosmWasm,
+		pairs,
+		garudaUpdateInterval,
+		config,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert to GarudaPair array
 	garudaPairs := make([]GarudaPair, 0, len(pairs))
-
-	// Create simple map for BaseSource (symbol => contract_address)
-	simplePairs := make(map[string]string)
-
 	for _, p := range pairs {
-		garudaPair := GarudaPair{
+		garudaPairs = append(garudaPairs, GarudaPair{
 			Symbol:          p.Symbol,
 			ContractAddress: p.ContractAddress,
 			Asset0Denom:     p.Asset0Denom,
 			Asset1Denom:     p.Asset1Denom,
 			Decimals0:       p.Decimals0,
 			Decimals1:       p.Decimals1,
-		}
-
-		garudaPairs = append(garudaPairs, garudaPair)
-		simplePairs[p.Symbol] = p.ContractAddress
+		})
 	}
-
-	if len(garudaPairs) == 0 {
-		return nil, fmt.Errorf("no valid pairs configured")
-	}
-
-	// Get update interval
-	updateInterval := garudaUpdateInterval
-	if interval, ok := config["update_interval"].(string); ok {
-		if d, err := time.ParseDuration(interval); err == nil {
-			updateInterval = d
-		}
-	}
-
-	logger := sources.GetLoggerFromConfig(config)
-
-	// Create base with simple pairs map
-	base := sources.NewBaseSource("garuda", sources.SourceTypeCosmWasm, simplePairs, logger)
 
 	return &GarudaSource{
 		BaseSource:     base,
@@ -107,15 +95,15 @@ func NewGarudaSource(config map[string]interface{}, grpcClient *client.Client) (
 	}, nil
 }
 
-// Initialize prepares the source
-func (s *GarudaSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *GarudaSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Garuda DeFi source",
 		"pairs", len(s.pairs),
 		"grpc_endpoint", s.grpcClient.CurrentEndpoint())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *GarudaSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Garuda DeFi source")
 
@@ -148,28 +136,28 @@ func (s *GarudaSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop halts the source
+// Stop halts the source.
 func (s *GarudaSource) Stop() error {
 	s.Close()
 	return nil
 }
 
-// GetPrices returns current prices
-func (s *GarudaSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns current prices.
+func (s *GarudaSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe allows receiving price updates
+// Subscribe allows receiving price updates.
 func (s *GarudaSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// fetchPrices queries all pairs and updates prices
+// fetchPrices queries all pairs and updates prices.
 func (s *GarudaSource) fetchPrices(ctx context.Context) error {
 	now := time.Now()
 	successCount := 0
@@ -198,10 +186,10 @@ func (s *GarudaSource) fetchPrices(ctx context.Context) error {
 		return nil
 	}
 
-	return fmt.Errorf("failed to fetch any pair prices")
+	return fmt.Errorf("%w", ErrNoPoolPrices)
 }
 
-// fetchPairPrice queries a single pair contract for reserves and calculates price using gRPC
+// fetchPairPrice queries a single pair contract for reserves and calculates price using gRPC.
 func (s *GarudaSource) fetchPairPrice(ctx context.Context, pair GarudaPair) (decimal.Decimal, error) {
 	// Build query message
 	queryMsg := map[string]interface{}{
@@ -227,7 +215,7 @@ func (s *GarudaSource) fetchPairPrice(ctx context.Context, pair GarudaPair) (dec
 
 	// Parse reserves
 	if poolResp.Reserve1 == "" || poolResp.Reserve2 == "" {
-		return decimal.Zero, fmt.Errorf("invalid pool response: missing reserves (response: %s)", string(respData))
+		return decimal.Zero, fmt.Errorf("%w: missing reserves (response: %s)", ErrInvalidPoolResponse, string(respData))
 	}
 
 	amount1, err := decimal.NewFromString(poolResp.Reserve1)
@@ -252,14 +240,9 @@ func (s *GarudaSource) fetchPairPrice(ctx context.Context, pair GarudaPair) (dec
 
 	// Price = USDC / LUNC (quote asset per base asset)
 	if reserve2.IsZero() {
-		return decimal.Zero, fmt.Errorf("zero liquidity in pool")
+		return decimal.Zero, fmt.Errorf("%w", ErrZeroLiquidity)
 	}
 
 	price := reserve1.Div(reserve2)
 	return price, nil
-}
-
-func init() {
-	// Registration will be done by the server when it has the gRPC client
-	// sources.Register("cosmwasm.garuda", NewGarudaSource)
 }

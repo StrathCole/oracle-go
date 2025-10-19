@@ -18,33 +18,33 @@ const (
 	huobiPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// HuobiSource fetches prices from Huobi REST API
+// HuobiSource fetches prices from Huobi REST API.
 type HuobiSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// HuobiTicker represents a single ticker in the response
+// HuobiTicker represents a single ticker in the response.
 type HuobiTicker struct {
 	Symbol string  `json:"symbol"` // e.g., "btcusdt"
 	Open   float64 `json:"open"`
 	High   float64 `json:"high"`
 	Low    float64 `json:"low"`
-	Close  float64 `json:"close"` // Last price
+	Close  float64 `json:"close"`  // Last price
 	Amount float64 `json:"amount"` // Base currency volume
 	Vol    float64 `json:"vol"`    // Quote currency volume
 	Count  int     `json:"count"`  // Number of trades
 }
 
-// HuobiResponse represents the API response
+// HuobiResponse represents the API response.
 type HuobiResponse struct {
 	Status string        `json:"status"` // "ok" or "error"
 	Ts     int64         `json:"ts"`     // Timestamp in milliseconds
 	Data   []HuobiTicker `json:"data"`
 }
 
-// NewHuobiSource creates a new Huobi REST source
+// NewHuobiSource creates a new Huobi REST source.
 func NewHuobiSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -68,13 +68,13 @@ func NewHuobiSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *HuobiSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *HuobiSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Huobi source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *HuobiSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Huobi source")
 
@@ -89,29 +89,29 @@ func (s *HuobiSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *HuobiSource) Stop() error {
 	s.Logger().Info("Huobi source stopped")
 	s.Close()
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *HuobiSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *HuobiSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *HuobiSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *HuobiSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(huobiPollRate)
 	defer ticker.Stop()
@@ -137,11 +137,11 @@ func (s *HuobiSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from Huobi API
+// fetchPrices fetches current prices from Huobi API.
 func (s *HuobiSource) fetchPrices(ctx context.Context) error {
 	// Build the full endpoint URL
 	url := s.apiURL + "/market/tickers"
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -151,15 +151,15 @@ func (s *HuobiSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -173,11 +173,11 @@ func (s *HuobiSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if response.Status != "ok" {
-		return fmt.Errorf("API error status: %s", response.Status)
+		return fmt.Errorf("%w: %s", sources.ErrAPIError, response.Status)
 	}
 
 	if len(response.Data) == 0 {
-		return fmt.Errorf("no tickers in response")
+		return fmt.Errorf("%w", sources.ErrNoTickersInResponse)
 	}
 
 	now := time.Now()
@@ -210,7 +210,7 @@ func (s *HuobiSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updateCount == 0 {
-		return fmt.Errorf("no matching symbols found in response")
+		return fmt.Errorf("%w", sources.ErrNoMatchingSymbols)
 	}
 
 	s.SetLastUpdate(now)

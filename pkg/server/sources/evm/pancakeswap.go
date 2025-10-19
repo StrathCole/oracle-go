@@ -17,9 +17,9 @@ import (
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
-// PancakeSwapSource implements price fetching from PancakeSwap V2 pairs on BSC
+// PancakeSwapSource implements price fetching from PancakeSwap V2 pairs on BSC.
 type PancakeSwapSource struct {
-	sources.BaseSource
+	*sources.BaseSource
 	client       *ethclient.Client
 	rpcURL       string
 	chainID      uint64
@@ -31,7 +31,7 @@ type PancakeSwapSource struct {
 	pairABI      abi.ABI
 }
 
-// PairConfig holds configuration for a trading pair
+// PairConfig holds configuration for a trading pair.
 type PairConfig struct {
 	Symbol      string
 	PairAddress common.Address
@@ -41,7 +41,7 @@ type PairConfig struct {
 	Decimals1   int
 }
 
-// Uniswap V2 Pair ABI (only getReserves function)
+// Uniswap V2 Pair ABI (only getReserves function).
 const pairABIJSON = `[{
 	"constant": true,
 	"inputs": [],
@@ -56,24 +56,24 @@ const pairABIJSON = `[{
 	"type": "function"
 }]`
 
-// NewPancakeSwapSource creates a new PancakeSwap price source
+// NewPancakeSwapSource creates a new PancakeSwap price source.
 func NewPancakeSwapSource(config map[string]interface{}) (sources.Source, error) {
 	// Parse RPC URL
 	rpcURL, ok := config["rpc_url"].(string)
 	if !ok || rpcURL == "" {
-		return nil, fmt.Errorf("rpc_url is required")
+		return nil, fmt.Errorf("%w", ErrRPCURLRequired)
 	}
 
 	// Parse chain ID
 	chainID, ok := config["chain_id"].(int)
 	if !ok {
-		return nil, fmt.Errorf("chain_id is required")
+		return nil, fmt.Errorf("%w", ErrChainIDRequired)
 	}
 
 	// Parse pairs
 	pairsRaw, ok := config["pairs"].([]interface{})
 	if !ok || len(pairsRaw) == 0 {
-		return nil, fmt.Errorf("pairs configuration is required")
+		return nil, fmt.Errorf("%w", ErrPairsConfigRequired)
 	}
 
 	pairs := make([]PairConfig, 0, len(pairsRaw))
@@ -118,7 +118,7 @@ func NewPancakeSwapSource(config map[string]interface{}) (sources.Source, error)
 	}
 
 	if len(pairs) == 0 {
-		return nil, fmt.Errorf("no valid pairs configured")
+		return nil, fmt.Errorf("%w", sources.ErrNoPairsConfigured)
 	}
 
 	// Parse ABI
@@ -136,8 +136,13 @@ func NewPancakeSwapSource(config map[string]interface{}) (sources.Source, error)
 	logger := sources.GetLoggerFromConfig(config)
 	base := sources.NewBaseSource("pancakeswap_bsc", sources.SourceTypeEVM, pairMappings, logger)
 
+	// Validate chainID is non-negative
+	if chainID < 0 {
+		return nil, fmt.Errorf("%w: chain_id must be non-negative", ErrChainIDRequired)
+	}
+
 	source := &PancakeSwapSource{
-		BaseSource: *base,
+		BaseSource: base,
 		rpcURL:     rpcURL,
 		chainID:    uint64(chainID),
 		pairs:      pairs,
@@ -149,7 +154,7 @@ func NewPancakeSwapSource(config map[string]interface{}) (sources.Source, error)
 	return source, nil
 }
 
-// Initialize connects to the EVM RPC endpoint
+// Initialize connects to the EVM RPC endpoint.
 func (s *PancakeSwapSource) Initialize(ctx context.Context) error {
 	client, err := ethclient.DialContext(ctx, s.rpcURL)
 	if err != nil {
@@ -161,10 +166,10 @@ func (s *PancakeSwapSource) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// Start begins fetching prices at regular intervals
+// Start begins fetching prices at regular intervals.
 func (s *PancakeSwapSource) Start(ctx context.Context) error {
 	if s.client == nil {
-		return fmt.Errorf("client not initialized, call Initialize first")
+		return fmt.Errorf("%w", sources.ErrClientNotInitialized)
 	}
 
 	// Fetch initial prices
@@ -175,12 +180,12 @@ func (s *PancakeSwapSource) Start(ctx context.Context) error {
 	// Start update ticker (15 seconds)
 	s.updateTicker = time.NewTicker(15 * time.Second)
 
-	go func() {
+	go func(ctx context.Context) {
 		for {
 			select {
 			case <-s.updateTicker.C:
-				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-				if err := s.fetchPrices(ctx); err != nil {
+				fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				if err := s.fetchPrices(fetchCtx); err != nil {
 					s.SetHealthy(false)
 				} else {
 					s.SetHealthy(true)
@@ -190,12 +195,12 @@ func (s *PancakeSwapSource) Start(ctx context.Context) error {
 				return
 			}
 		}
-	}()
+	}(ctx)
 
 	return nil
 }
 
-// Stop halts the price fetching
+// Stop halts the price fetching.
 func (s *PancakeSwapSource) Stop() error {
 	if s.updateTicker != nil {
 		s.updateTicker.Stop()
@@ -209,13 +214,13 @@ func (s *PancakeSwapSource) Stop() error {
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *PancakeSwapSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *PancakeSwapSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if len(s.prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 
 	// Return a copy
@@ -227,12 +232,12 @@ func (s *PancakeSwapSource) GetPrices(ctx context.Context) (map[string]sources.P
 	return result, nil
 }
 
-// Subscribe is not implemented for EVM sources
-func (s *PancakeSwapSource) Subscribe(updates chan<- sources.PriceUpdate) error {
-	return fmt.Errorf("subscribe not implemented for EVM sources")
+// Subscribe is not implemented for EVM sources.
+func (s *PancakeSwapSource) Subscribe(_ chan<- sources.PriceUpdate) error {
+	return fmt.Errorf("%w", sources.ErrSubscribeNotImplemented)
 }
 
-// fetchPrices queries all pair contracts for reserves and calculates prices
+// fetchPrices queries all pair contracts for reserves and calculates prices.
 func (s *PancakeSwapSource) fetchPrices(ctx context.Context) error {
 	newPrices := make(map[string]sources.Price)
 
@@ -254,7 +259,7 @@ func (s *PancakeSwapSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(newPrices) == 0 {
-		return fmt.Errorf("failed to fetch any prices")
+		return fmt.Errorf("%w", sources.ErrNoPricesFetched)
 	}
 
 	s.mu.Lock()
@@ -270,14 +275,14 @@ func (s *PancakeSwapSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
-// Reserves holds the pair reserves
+// Reserves holds the pair reserves.
 type Reserves struct {
 	Reserve0           *big.Int
 	Reserve1           *big.Int
 	BlockTimestampLast uint32
 }
 
-// getReserves calls the getReserves() function on a Uniswap V2 pair contract
+// getReserves calls the getReserves() function on a Uniswap V2 pair contract.
 func (s *PancakeSwapSource) getReserves(ctx context.Context, pairAddr common.Address) (*Reserves, error) {
 	// Pack the getReserves function call
 	data, err := s.pairABI.Pack("getReserves")
@@ -313,15 +318,25 @@ func (s *PancakeSwapSource) getReserves(ctx context.Context, pairAddr common.Add
 	}, nil
 }
 
-// calculatePrice calculates the spot price from reserves
-// Price = (reserve1 / 10^decimals1) / (reserve0 / 10^decimals0)
+// calculatePrice calculates the spot price from reserves.
+// Price = (reserve1 / 10^decimals1) / (reserve0 / 10^decimals0).
 func (s *PancakeSwapSource) calculatePrice(reserve0, reserve1 *big.Int, decimals0, decimals1 int) decimal.Decimal {
 	if reserve0.Sign() == 0 || reserve1.Sign() == 0 {
 		return decimal.Zero
 	}
 
+	// Bounds check decimals
+	if decimals0 < 0 || decimals0 > 255 {
+		decimals0 = 0
+	}
+	if decimals1 < 0 || decimals1 > 255 {
+		decimals1 = 0
+	}
+
 	// Create decimal scaling factors
-	scale0 := decimal.NewFromBigInt(big.NewInt(10), int32(decimals0))
+	// #nosec G115 -- decimals validated above to be 0-255
+	scale0 := decimal.NewFromBigInt(big.NewInt(10), int32(decimals0)) // #nosec G115
+	// #nosec G115 -- decimals validated above to be 0-255
 	scale1 := decimal.NewFromBigInt(big.NewInt(10), int32(decimals1))
 
 	// Convert reserves to decimals
@@ -330,13 +345,4 @@ func (s *PancakeSwapSource) calculatePrice(reserve0, reserve1 *big.Int, decimals
 
 	// Spot price = amount1 / amount0
 	return amount1.Div(amount0)
-}
-
-// extractSymbols extracts symbol names from pairs
-func extractSymbols(pairs []PairConfig) []string {
-	symbols := make([]string, len(pairs))
-	for i, pair := range pairs {
-		symbols[i] = pair.Symbol
-	}
-	return symbols
 }

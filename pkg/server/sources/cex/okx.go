@@ -19,16 +19,16 @@ const (
 	okxPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// OKXSource fetches prices from OKX (OKEX) REST API
+// OKXSource fetches prices from OKX (OKEX) REST API.
 type OKXSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// OKXTicker represents a ticker in the API response
+// OKXTicker represents a ticker in the API response.
 type OKXTicker struct {
-	InstId    string `json:"instId"`    // Instrument ID (e.g., "BTC-USDT")
+	InstID    string `json:"instId"`    // Instrument ID (e.g., "BTC-USDT")
 	Last      string `json:"last"`      // Last traded price
 	LastSz    string `json:"lastSz"`    // Last traded size
 	AskPx     string `json:"askPx"`     // Best ask price
@@ -38,14 +38,14 @@ type OKXTicker struct {
 	Ts        string `json:"ts"`        // Ticker data generation time
 }
 
-// OKXResponse represents the API response
+// OKXResponse represents the API response.
 type OKXResponse struct {
 	Code string      `json:"code"` // Error code, "0" means success
 	Msg  string      `json:"msg"`  // Error message
 	Data []OKXTicker `json:"data"` // Ticker data
 }
 
-// NewOKXSource creates a new OKX REST source
+// NewOKXSource creates a new OKX REST source.
 func NewOKXSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -69,13 +69,13 @@ func NewOKXSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *OKXSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *OKXSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing OKX source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *OKXSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting OKX source")
 
@@ -90,28 +90,28 @@ func (s *OKXSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *OKXSource) Stop() error {
 	s.Logger().Info("OKX source stopped")
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *OKXSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *OKXSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *OKXSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *OKXSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(okxPollRate)
 	defer ticker.Stop()
@@ -137,7 +137,7 @@ func (s *OKXSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from OKX API
+// fetchPrices fetches current prices from OKX API.
 func (s *OKXSource) fetchPrices(ctx context.Context) error {
 	// Query with inst type (SPOT)
 	url := s.apiURL + "?instType=SPOT"
@@ -150,16 +150,18 @@ func (s *OKXSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -173,7 +175,7 @@ func (s *OKXSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if response.Code != "0" {
-		return fmt.Errorf("API error: %s - %s", response.Code, response.Msg)
+		return fmt.Errorf("%w: %s - %s", sources.ErrAPIError, response.Code, response.Msg)
 	}
 
 	now := time.Now()
@@ -187,14 +189,14 @@ func (s *OKXSource) fetchPrices(ctx context.Context) error {
 
 	for _, ticker := range response.Data {
 		// Check if this is a symbol we want
-		unifiedSymbol, ok := symbolMap[ticker.InstId]
+		unifiedSymbol, ok := symbolMap[ticker.InstID]
 		if !ok {
 			continue
 		}
 
 		priceFloat, err := strconv.ParseFloat(ticker.Last, 64)
 		if err != nil {
-			s.Logger().Warn("Failed to parse price", "symbol", ticker.InstId, "price", ticker.Last, "error", err)
+			s.Logger().Warn("Failed to parse price", "symbol", ticker.InstID, "price", ticker.Last, "error", err)
 			continue
 		}
 
@@ -210,10 +212,4 @@ func (s *OKXSource) fetchPrices(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func init() {
-	sources.Register("cex.okx", func(config map[string]interface{}) (sources.Source, error) {
-		return NewOKXSource(config)
-	})
 }

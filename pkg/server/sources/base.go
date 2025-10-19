@@ -1,3 +1,4 @@
+// Package sources provides price source interfaces and implementations.
 package sources
 
 import (
@@ -14,14 +15,17 @@ import (
 )
 
 const (
-	// Retry configuration defaults
-	DefaultMaxRetries     = 5
+	// DefaultMaxRetries is the default maximum number of retries for failed requests.
+	DefaultMaxRetries = 5
+	// DefaultInitialBackoff is the default initial backoff duration for retries.
 	DefaultInitialBackoff = 1 * time.Second
-	DefaultMaxBackoff     = 2 * time.Minute
-	DefaultBackoffFactor  = 2.0
+	// DefaultMaxBackoff is the default maximum backoff duration for retries.
+	DefaultMaxBackoff = 2 * time.Minute
+	// DefaultBackoffFactor is the default backoff multiplier factor.
+	DefaultBackoffFactor = 2.0
 )
 
-// RetryConfig holds retry configuration for sources
+// RetryConfig holds retry configuration for sources.
 type RetryConfig struct {
 	MaxRetries     int
 	InitialBackoff time.Duration
@@ -29,7 +33,7 @@ type RetryConfig struct {
 	BackoffFactor  float64
 }
 
-// DefaultRetryConfig returns the default retry configuration
+// DefaultRetryConfig returns the default retry configuration.
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxRetries:     DefaultMaxRetries,
@@ -39,7 +43,7 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// BaseSource provides common functionality for all price sources
+// BaseSource provides common functionality for all price sources.
 type BaseSource struct {
 	name             string
 	sourcetype       SourceType
@@ -84,29 +88,29 @@ func NewBaseSource(name string, sourcetype SourceType, pairs map[string]string, 
 	}
 }
 
-// Name returns the source name
+// Name returns the source name.
 func (b *BaseSource) Name() string {
 	return b.name
 }
 
-// Type returns the source type
+// Type returns the source type.
 func (b *BaseSource) Type() SourceType {
 	return b.sourcetype
 }
 
-// Symbols returns the symbols this source provides
+// Symbols returns the symbols this source provides.
 func (b *BaseSource) Symbols() []string {
 	return b.symbols
 }
 
-// IsHealthy returns the health status
+// IsHealthy returns the health status.
 func (b *BaseSource) IsHealthy() bool {
 	b.healthMu.RLock()
 	defer b.healthMu.RUnlock()
 	return b.healthy
 }
 
-// SetHealthy sets the health status
+// SetHealthy sets the health status.
 func (b *BaseSource) SetHealthy(healthy bool) {
 	b.healthMu.Lock()
 	defer b.healthMu.Unlock()
@@ -116,21 +120,21 @@ func (b *BaseSource) SetHealthy(healthy bool) {
 	metrics.RecordSourceHealth(b.name, string(b.sourcetype), healthy)
 }
 
-// LastUpdate returns the time of the last successful price update
+// LastUpdate returns the time of the last successful price update.
 func (b *BaseSource) LastUpdate() time.Time {
 	b.updateMu.RLock()
 	defer b.updateMu.RUnlock()
 	return b.lastUpdate
 }
 
-// SetLastUpdate sets the last update time
+// SetLastUpdate sets the last update time.
 func (b *BaseSource) SetLastUpdate(t time.Time) {
 	b.updateMu.Lock()
 	defer b.updateMu.Unlock()
 	b.lastUpdate = t
 }
 
-// GetPrice returns a single price by symbol
+// GetPrice returns a single price by symbol.
 func (b *BaseSource) GetPrice(symbol string) (Price, bool) {
 	b.pricesMu.RLock()
 	defer b.pricesMu.RUnlock()
@@ -183,7 +187,7 @@ func (b *BaseSource) SetPrice(symbol string, price decimal.Decimal, timestamp ti
 	})
 }
 
-// GetAllPrices returns all prices
+// GetAllPrices returns all prices.
 func (b *BaseSource) GetAllPrices() map[string]Price {
 	b.pricesMu.RLock()
 	defer b.pricesMu.RUnlock()
@@ -196,14 +200,14 @@ func (b *BaseSource) GetAllPrices() map[string]Price {
 	return prices
 }
 
-// AddSubscriber adds a price update subscriber
+// AddSubscriber adds a price update subscriber.
 func (b *BaseSource) AddSubscriber(ch chan<- PriceUpdate) {
 	b.subscribersMu.Lock()
 	defer b.subscribersMu.Unlock()
 	b.subscribers = append(b.subscribers, ch)
 }
 
-// RemoveSubscriber removes a price update subscriber
+// RemoveSubscriber removes a price update subscriber.
 func (b *BaseSource) RemoveSubscriber(ch chan<- PriceUpdate) {
 	b.subscribersMu.Lock()
 	defer b.subscribersMu.Unlock()
@@ -216,7 +220,7 @@ func (b *BaseSource) RemoveSubscriber(ch chan<- PriceUpdate) {
 	}
 }
 
-// notifySubscribers sends price updates to all subscribers
+// notifySubscribers sends price updates to all subscribers.
 func (b *BaseSource) notifySubscribers(update PriceUpdate) {
 	b.subscribersMu.RLock()
 	defer b.subscribersMu.RUnlock()
@@ -232,12 +236,12 @@ func (b *BaseSource) notifySubscribers(update PriceUpdate) {
 	}
 }
 
-// StopChan returns the stop channel
+// StopChan returns the stop channel.
 func (b *BaseSource) StopChan() <-chan struct{} {
 	return b.stopChan
 }
 
-// Close closes the stop channel
+// Close closes the stop channel.
 func (b *BaseSource) Close() {
 	select {
 	case <-b.stopChan:
@@ -247,19 +251,19 @@ func (b *BaseSource) Close() {
 	}
 }
 
-// Logger returns the logger
+// Logger returns the logger.
 func (b *BaseSource) Logger() *logging.Logger {
 	return b.logger
 }
 
-// GetSourceSymbol converts unified symbol to source-specific symbol
-// Returns empty string if not found
+// GetSourceSymbol converts unified symbol to source-specific symbol.
+// Returns empty string if not found.
 func (b *BaseSource) GetSourceSymbol(unifiedSymbol string) string {
 	return b.pairs[unifiedSymbol]
 }
 
-// GetUnifiedSymbol finds the unified symbol for a source-specific symbol
-// Returns empty string if not found
+// GetUnifiedSymbol finds the unified symbol for a source-specific symbol.
+// Returns empty string if not found.
 func (b *BaseSource) GetUnifiedSymbol(sourceSymbol string) string {
 	for unified, source := range b.pairs {
 		if source == sourceSymbol {
@@ -269,7 +273,7 @@ func (b *BaseSource) GetUnifiedSymbol(sourceSymbol string) string {
 	return ""
 }
 
-// GetAllPairs returns a copy of the pair mappings
+// GetAllPairs returns a copy of the pair mappings.
 func (b *BaseSource) GetAllPairs() map[string]string {
 	pairs := make(map[string]string, len(b.pairs))
 	for k, v := range b.pairs {
@@ -278,18 +282,18 @@ func (b *BaseSource) GetAllPairs() map[string]string {
 	return pairs
 }
 
-// ParsePairsConfig extracts pair mappings from config
-// Expects config["pairs"] to be map[string]interface{} where values are strings
+// ParsePairsConfig extracts pair mappings from config.
+// Expects config["pairs"] to be map[string]interface{} where values are strings.
 func ParsePairsConfig(config map[string]interface{}) (map[string]string, error) {
 	pairsRaw, ok := config["pairs"]
 	if !ok {
-		return nil, nil // No pairs configured, return empty map
+		return make(map[string]string), nil // No pairs configured, return empty map
 	}
 
 	pairsMap, ok := pairsRaw.(map[string]interface{})
 	if !ok {
 		// Try to interpret as a simpler format
-		return nil, nil
+		return make(map[string]string), nil
 	}
 
 	pairs := make(map[string]string, len(pairsMap))
@@ -304,39 +308,39 @@ func ParsePairsConfig(config map[string]interface{}) (map[string]string, error) 
 	return pairs, nil
 }
 
-// SetRetryConfig sets custom retry configuration
+// SetRetryConfig sets custom retry configuration.
 func (b *BaseSource) SetRetryConfig(config RetryConfig) {
 	b.retryConfig = config
 }
 
-// GetRetryConfig returns the current retry configuration
+// GetRetryConfig returns the current retry configuration.
 func (b *BaseSource) GetRetryConfig() RetryConfig {
 	return b.retryConfig
 }
 
-// RecordSuccess resets the consecutive failure counter
+// RecordSuccess resets the consecutive failure counter.
 func (b *BaseSource) RecordSuccess() {
 	b.failsMu.Lock()
 	defer b.failsMu.Unlock()
 	b.consecutiveFails = 0
 }
 
-// RecordFailure increments the consecutive failure counter
+// RecordFailure increments the consecutive failure counter.
 func (b *BaseSource) RecordFailure() {
 	b.failsMu.Lock()
 	defer b.failsMu.Unlock()
 	b.consecutiveFails++
 }
 
-// GetConsecutiveFailures returns the number of consecutive failures
+// GetConsecutiveFailures returns the number of consecutive failures.
 func (b *BaseSource) GetConsecutiveFailures() int {
 	b.failsMu.Lock()
 	defer b.failsMu.Unlock()
 	return b.consecutiveFails
 }
 
-// CalculateBackoff calculates the backoff duration for the current attempt
-// Uses exponential backoff with jitter
+// CalculateBackoff calculates the backoff duration for the current attempt.
+// Uses exponential backoff with jitter.
 func (b *BaseSource) CalculateBackoff(attempt int) time.Duration {
 	if attempt <= 0 {
 		return 0
@@ -359,8 +363,8 @@ func (b *BaseSource) CalculateBackoff(attempt int) time.Duration {
 	return duration
 }
 
-// RetryWithBackoff executes a function with exponential backoff retry logic
-// Returns the error from the last attempt if all retries fail
+// RetryWithBackoff executes a function with exponential backoff retry logic.
+// Returns the error from the last attempt if all retries fail.
 func (b *BaseSource) RetryWithBackoff(ctx context.Context, operation string, fn func() error) error {
 	var lastErr error
 
@@ -370,7 +374,7 @@ func (b *BaseSource) RetryWithBackoff(ctx context.Context, operation string, fn 
 		case <-ctx.Done():
 			return fmt.Errorf("context cancelled during %s: %w", operation, ctx.Err())
 		case <-b.stopChan:
-			return fmt.Errorf("source stopped during %s", operation)
+			return fmt.Errorf("%w: %s", ErrSourceStopped, operation)
 		default:
 		}
 
@@ -417,7 +421,7 @@ func (b *BaseSource) RetryWithBackoff(ctx context.Context, operation string, fn 
 		case <-ctx.Done():
 			return fmt.Errorf("context cancelled during backoff: %w", ctx.Err())
 		case <-b.stopChan:
-			return fmt.Errorf("source stopped during backoff")
+			return fmt.Errorf("%w: backoff", ErrSourceStopped)
 		}
 	}
 
@@ -433,7 +437,7 @@ func (b *BaseSource) RetryWithBackoff(ctx context.Context, operation string, fn 
 // - "USDC/LUNC", price=24000 -> "LUNC/USDC", 0.0000417 (inverted)
 // - "USD/KRW", price=1300 -> "KRW/USD", 0.00077 (inverted)
 // - "USDT/BTC", price=0.00002 -> "BTC/USDT", 50000 (inverted)
-// - "EUR/USD", price=1.08 -> "EUR/USD", 1.08 (no change - EUR is the asset)
+// - "EUR/USD", price=1.08 -> "EUR/USD", 1.08 (no change - EUR is the asset).
 func normalizeSymbolPair(symbol string, price decimal.Decimal) (string, decimal.Decimal) {
 	// Convert to uppercase for processing
 	upper := strings.ToUpper(symbol)

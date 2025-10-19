@@ -1,3 +1,4 @@
+// Package oracle provides oracle-specific utilities and message building.
 package oracle
 
 import (
@@ -39,10 +40,10 @@ type Prevote struct {
 // The vote string format is: "price1denom1,price2denom2,..."
 // For example: "0.000041ulunc,111234.9uusd,3966.11ukrw"
 //
-// The hash is computed as: SHA256("{salt}:{vote}:{validator}")
+// The hash is computed as: SHA256("{salt}:{vote}:{validator}").
 func NewPrevote(prices []Price, validator sdk.ValAddress, feeder sdk.AccAddress, logger zerolog.Logger) (*Prevote, error) {
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices provided")
+		return nil, fmt.Errorf("%w", ErrNoPricesProvided)
 	}
 
 	// Sort prices by denom to ensure deterministic order
@@ -149,7 +150,7 @@ func float64ToDec(price float64) string {
 // Returns a map of denom -> price.
 func ParseExchangeRates(exchangeRates string) (map[string]sdk.Dec, error) {
 	if exchangeRates == "" {
-		return nil, fmt.Errorf("empty exchange rates string")
+		return nil, fmt.Errorf("%w", ErrEmptyRates)
 	}
 
 	tuples, err := oracletypes.ParseExchangeRateTuples(exchangeRates)

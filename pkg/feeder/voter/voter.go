@@ -1,3 +1,4 @@
+// Package voter provides oracle voting functionality.
 package voter
 
 import (
@@ -17,18 +18,26 @@ import (
 	"tc.com/oracle-prices/pkg/feeder/tx"
 )
 
-// VotingState represents the current state of the voting loop
+// VotingState represents the current state of the voting loop.
 type VotingState string
 
 const (
-	StateIdle        VotingState = "idle"
+	// StateIdle is the idle voting state.
+	StateIdle VotingState = "idle"
+	// StateFetchPrices is the state for fetching prices.
 	StateFetchPrices VotingState = "fetch_prices"
-	StateSubmitVote  VotingState = "submit_vote"
-	StateWaitPeriod  VotingState = "wait_period"
-	StateError       VotingState = "error"
+	// StateSubmitVote is the state for submitting votes.
+	StateSubmitVote VotingState = "submit_vote"
+	// StateWaitPeriod is the state for waiting for voting period.
+	StateWaitPeriod VotingState = "wait_period"
+	// StateError is the error voting state.
+	StateError VotingState = "error"
+
+	// UST meta-denom (Oracle whitelist only, not a bank denom).
+	ustMetaDenom = "UST"
 )
 
-// Voter manages the oracle voting loop
+// Voter manages the oracle voting loop.
 type Voter struct {
 	chainID     string
 	validators  []sdk.ValAddress // Validator addresses to vote for
@@ -60,7 +69,7 @@ type Voter struct {
 	lastVotePrices map[string]sdk.Dec // Last submitted vote prices (denom -> rate)
 }
 
-// Config contains voter configuration
+// Config contains voter configuration.
 type Config struct {
 	ChainID       string
 	Validators    []string // Validator addresses (bech32 encoded)
@@ -74,7 +83,7 @@ type Config struct {
 	Verify        bool // If true (with DryRun), verify votes against on-chain rates
 }
 
-// NewVoter creates a new voter instance
+// NewVoter creates a new voter instance.
 func NewVoter(
 	cfg Config,
 	grpcClient *client.Client,
@@ -125,7 +134,7 @@ func NewVoter(
 	}, nil
 }
 
-// Start begins the voting loop
+// Start begins the voting loop.
 func (v *Voter) Start(ctx context.Context) error {
 	v.logger.Info().
 		Str("chain_id", v.chainID).
@@ -182,7 +191,7 @@ func (v *Voter) Start(ctx context.Context) error {
 	}
 }
 
-// performVoteCycle executes one complete vote cycle for the given period
+// performVoteCycle executes one complete vote cycle for the given period.
 func (v *Voter) performVoteCycle(ctx context.Context, period uint64) error {
 	v.logger.Debug().Uint64("period", period).Msg("Starting vote cycle")
 
@@ -201,7 +210,7 @@ func (v *Voter) performVoteCycle(ctx context.Context, period uint64) error {
 
 	// Use whitelist from event stream (updated via ParamsUpdate channel)
 	if len(v.whitelist) == 0 {
-		return fmt.Errorf("oracle whitelist not yet loaded")
+		return fmt.Errorf("%w", ErrWhitelistNotLoaded)
 	}
 
 	v.logger.Debug().
@@ -223,7 +232,7 @@ func (v *Voter) performVoteCycle(ctx context.Context, period uint64) error {
 			Int("total_prices", len(prices)).
 			Strs("whitelist", v.whitelist).
 			Msg("No whitelisted prices available - check symbol to denom conversion")
-		return fmt.Errorf("no whitelisted prices available")
+		return fmt.Errorf("%w", ErrNoWhitelistedPrices)
 	}
 
 	v.logger.Debug().
@@ -252,7 +261,7 @@ func (v *Voter) performVoteCycle(ctx context.Context, period uint64) error {
 	return nil
 }
 
-// submitVoteForValidator submits prevote + vote for a single validator
+// submitVoteForValidator submits prevote + vote for a single validator.
 func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAddress, prices []oracle.Price, period uint64) error {
 	valKey := validator.String()
 
@@ -352,7 +361,7 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 	return nil
 }
 
-// broadcastVoteTx broadcasts a vote transaction with retry logic
+// broadcastVoteTx broadcasts a vote transaction with retry logic.
 func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint64) error {
 	// Dry-run mode: log the vote details but don't actually submit
 	if v.dryRun {
@@ -364,21 +373,22 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 			msgType := fmt.Sprintf("%T", msg)
 
 			// Try to identify message type from string representation
-			if strings.Contains(msgType, "MsgAggregateExchangeRatePrevote") {
+			switch {
+			case strings.Contains(msgType, "MsgAggregateExchangeRatePrevote"):
 				v.logger.Info().
 					Int("msg_index", i).
 					Str("type", "prevote").
 					Str("message", msgStr).
 					Uint64("period", period).
 					Msg("DRY RUN: Would submit prevote")
-			} else if strings.Contains(msgType, "MsgAggregateExchangeRateVote") {
+			case strings.Contains(msgType, "MsgAggregateExchangeRateVote"):
 				v.logger.Info().
 					Int("msg_index", i).
 					Str("type", "vote").
 					Str("message", msgStr).
 					Uint64("period", period).
 					Msg("DRY RUN: Would submit vote")
-			} else {
+			default:
 				v.logger.Info().
 					Int("msg_index", i).
 					Str("type", msgType).
@@ -424,7 +434,7 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 		if err == nil {
 			v.logger.Info().
 				Str("tx_hash", txResp.TxHash).
-				Uint64("height", uint64(txResp.Height)).
+				Uint64("height", uint64(txResp.Height)). // #nosec G115 -- Height is always non-negative
 				Msg("Vote transaction broadcast successful")
 
 			// Wait for transaction to be included in a block and check result
@@ -438,7 +448,7 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 	return fmt.Errorf("failed after %d attempts: %w", v.maxRetries, lastErr)
 }
 
-// verifyTxResult waits for a transaction to be included in a block and verifies it succeeded
+// verifyTxResult waits for a transaction to be included in a block and verifies it succeeded.
 func (v *Voter) verifyTxResult(ctx context.Context, txHash string) error {
 	// GetTx now has built-in retry logic with exponential backoff (up to 10 attempts)
 	// No need for manual retry loop here
@@ -458,18 +468,18 @@ func (v *Voter) verifyTxResult(ctx context.Context, txHash string) error {
 			Uint32("code", txResp.Code).
 			Str("raw_log", txResp.RawLog).
 			Msg("Transaction execution failed")
-		return fmt.Errorf("tx %s failed with code %d: %s", txHash, txResp.Code, txResp.RawLog)
+		return fmt.Errorf("%w: tx=%s, code=%d, log=%s", ErrTxFailed, txHash, txResp.Code, txResp.RawLog)
 	}
 
 	v.logger.Info().
 		Str("tx_hash", txHash).
-		Uint64("height", uint64(txResp.Height)).
-		Uint64("gas_used", uint64(txResp.GasUsed)).
+		Uint64("height", uint64(txResp.Height)).    // #nosec G115 -- Height is always non-negative
+		Uint64("gas_used", uint64(txResp.GasUsed)). // #nosec G115 -- GasUsed is always non-negative
 		Msg("Transaction executed successfully")
 	return nil
 }
 
-// fetchPrices retrieves current prices from price server
+// fetchPrices retrieves current prices from price server.
 func (v *Voter) fetchPrices(ctx context.Context) (map[string]decimal.Decimal, error) {
 	prices, err := v.priceClient.GetPrices(ctx)
 	if err != nil {
@@ -530,8 +540,8 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 		Float64("lunc_usd", luncUSDFloat).
 		Msg("Using LUNC/USD price for fiat conversions")
 
-	var result []oracle.Price
-	var conversions []string
+	// Pre-allocate result with approximately whitelist size
+	result := make([]oracle.Price, 0, len(whitelist))
 	var filtered []string
 
 	// Track which whitelisted denoms we've found
@@ -573,8 +583,6 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 			Price: fiatPerLunc,
 		})
 		foundDenoms[denom] = true
-		conversions = append(conversions, fmt.Sprintf("%s->%s: (1/%.6f) * %.8f = %.10f",
-			symbol, denom, priceFloat, luncUSDFloat, fiatPerLunc))
 	}
 
 	// Special handling: Add uusd (USD/LUNC rate)
@@ -584,7 +592,6 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 			Price: luncUSDFloat,
 		})
 		foundDenoms["uusd"] = true
-		conversions = append(conversions, fmt.Sprintf("LUNC/USD->uusd: %.8f", luncUSDFloat))
 		v.logger.Debug().
 			Float64("uusd", luncUSDFloat).
 			Msg("Added uusd (LUNC/USD price)")
@@ -602,7 +609,7 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 	// Following old TypeScript feeder behavior: missing denoms get price "0.000000"
 	var abstainDenoms []string
 	for _, denom := range whitelist {
-		if !foundDenoms[denom] && denom != "UST" { // Skip UST meta-denom check
+		if !foundDenoms[denom] && denom != ustMetaDenom { // Skip UST meta-denom check
 			result = append(result, oracle.Price{
 				Denom: denom,
 				Price: 0.0, // Abstain vote
@@ -640,7 +647,7 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 // - "SDR/USD" or "SDR" -> "usdr"
 // - "USD" -> "uusd" (special case, represents the price of 1 USD in LUNC)
 // - "MNT/USD" or "MNT" -> "umnt"
-// - "USTC/USD" or "USTC" -> "UST" (meta-denom, no prefix)
+// - "USTC/USD" or "USTC" -> "UST" (meta-denom, no prefix).
 func symbolToDenom(symbol string) string {
 	// Convert to uppercase for processing
 	upper := strings.ToUpper(symbol)
@@ -669,18 +676,18 @@ func symbolToDenom(symbol string) string {
 	return "u" + strings.ToLower(upper)
 }
 
-// GetState returns the current voting state
+// GetState returns the current voting state.
 func (v *Voter) GetState() VotingState {
 	return v.state
 }
 
-// GetLastVotePeriod returns the last period we voted in
+// GetLastVotePeriod returns the last period we voted in.
 func (v *Voter) GetLastVotePeriod() uint64 {
 	return v.lastVotePeriod
 }
 
 // verifyVotesAgainstChain compares the last submitted vote with on-chain exchange rates
-// and logs any deviations > 1%
+// and logs any deviations > 1%.
 func (v *Voter) verifyVotesAgainstChain(ctx context.Context) error {
 	v.logger.Debug().
 		Bool("verify", v.verify).

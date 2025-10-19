@@ -20,7 +20,7 @@ const (
 	coinmarketcapPollRate = 15 * time.Second // 15 seconds (API rate limits)
 )
 
-// CoinMarketCapSource fetches prices from CoinMarketCap REST API
+// CoinMarketCapSource fetches prices from CoinMarketCap REST API.
 type CoinMarketCapSource struct {
 	*sources.BaseSource
 
@@ -28,7 +28,7 @@ type CoinMarketCapSource struct {
 	apiURL string
 }
 
-// CoinMarketCapQuote represents a quote in USD
+// CoinMarketCapQuote represents a quote in USD.
 type CoinMarketCapQuote struct {
 	Price            float64 `json:"price"`
 	Volume24h        float64 `json:"volume_24h"`
@@ -36,13 +36,13 @@ type CoinMarketCapQuote struct {
 	MarketCap        float64 `json:"market_cap"`
 }
 
-// CoinMarketCapData represents cryptocurrency data
+// CoinMarketCapData represents cryptocurrency data.
 type CoinMarketCapData struct {
 	Slug  string                        `json:"slug"`
 	Quote map[string]CoinMarketCapQuote `json:"quote"`
 }
 
-// CoinMarketCapResponse represents the API response
+// CoinMarketCapResponse represents the API response.
 type CoinMarketCapResponse struct {
 	Status struct {
 		Timestamp    string `json:"timestamp"`
@@ -52,7 +52,7 @@ type CoinMarketCapResponse struct {
 	Data map[string]CoinMarketCapData `json:"data"`
 }
 
-// NewCoinMarketCapSource creates a new CoinMarketCap REST source
+// NewCoinMarketCapSource creates a new CoinMarketCap REST source.
 func NewCoinMarketCapSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -65,7 +65,7 @@ func NewCoinMarketCapSource(config map[string]interface{}) (sources.Source, erro
 	// API key is required for CoinMarketCap
 	apiKey, ok := config["api_key"].(string)
 	if !ok || apiKey == "" {
-		return nil, fmt.Errorf("api_key is required for CoinMarketCap")
+		return nil, fmt.Errorf("%w", sources.ErrAPIKeyRequired)
 	}
 
 	apiURL := coinmarketcapAPIURL
@@ -83,13 +83,13 @@ func NewCoinMarketCapSource(config map[string]interface{}) (sources.Source, erro
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *CoinMarketCapSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *CoinMarketCapSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing CoinMarketCap source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *CoinMarketCapSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting CoinMarketCap source")
 
@@ -104,28 +104,28 @@ func (s *CoinMarketCapSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *CoinMarketCapSource) Stop() error {
 	s.Logger().Info("CoinMarketCap source stopped")
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *CoinMarketCapSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *CoinMarketCapSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *CoinMarketCapSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *CoinMarketCapSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(coinmarketcapPollRate)
 	defer ticker.Stop()
@@ -151,7 +151,7 @@ func (s *CoinMarketCapSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from CoinMarketCap API
+// fetchPrices fetches current prices from CoinMarketCap API.
 func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 	// Convert pairs to slugs using pair mappings
 	slugs := make([]string, 0, len(s.GetAllPairs()))
@@ -164,7 +164,7 @@ func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(slugs) == 0 {
-		return fmt.Errorf("no valid symbols to fetch")
+		return fmt.Errorf("%w", sources.ErrNoValidSymbols)
 	}
 
 	// Build request URL with slug parameter
@@ -187,16 +187,16 @@ func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -210,7 +210,7 @@ func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if response.Status.ErrorCode != 0 {
-		return fmt.Errorf("API error: %s", response.Status.ErrorMessage)
+		return fmt.Errorf("%w: %s", sources.ErrAPIError, response.Status.ErrorMessage)
 	}
 
 	now := time.Now()
@@ -242,10 +242,4 @@ func (s *CoinMarketCapSource) fetchPrices(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func init() {
-	sources.Register("cex.coinmarketcap", func(config map[string]interface{}) (sources.Source, error) {
-		return NewCoinMarketCapSource(config)
-	})
 }

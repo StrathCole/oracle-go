@@ -19,14 +19,14 @@ const (
 	bitfinexPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// BitfinexSource fetches prices from Bitfinex REST API
+// BitfinexSource fetches prices from Bitfinex REST API.
 type BitfinexSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// NewBitfinexSource creates a new Bitfinex REST source
+// NewBitfinexSource creates a new Bitfinex REST source.
 func NewBitfinexSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -50,13 +50,13 @@ func NewBitfinexSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *BitfinexSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *BitfinexSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Bitfinex source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *BitfinexSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Bitfinex source")
 
@@ -71,28 +71,28 @@ func (s *BitfinexSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *BitfinexSource) Stop() error {
 	s.Logger().Info("Bitfinex source stopped")
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *BitfinexSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *BitfinexSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe is not implemented for REST sources
+// Subscribe is not implemented for REST sources.
 func (s *BitfinexSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *BitfinexSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(bitfinexPollRate)
 	defer ticker.Stop()
@@ -118,7 +118,7 @@ func (s *BitfinexSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from Bitfinex API
+// fetchPrices fetches current prices from Bitfinex API.
 func (s *BitfinexSource) fetchPrices(ctx context.Context) error {
 	// Build symbols parameter from pair mappings
 	symbolsParam := make([]string, 0, len(s.GetAllPairs()))
@@ -143,16 +143,16 @@ func (s *BitfinexSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -206,10 +206,4 @@ func (s *BitfinexSource) fetchPrices(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func init() {
-	sources.Register("cex.bitfinex", func(config map[string]interface{}) (sources.Source, error) {
-		return NewBitfinexSource(config)
-	})
 }

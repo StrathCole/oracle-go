@@ -1,3 +1,4 @@
+// Package main is the entrypoint for the oracle-go application.
 package main
 
 import (
@@ -31,7 +32,7 @@ import (
 	"tc.com/oracle-prices/pkg/server/api"
 	"tc.com/oracle-prices/pkg/server/sources"
 
-	// Import sources to register them
+	// Import sources to register them.
 	_ "tc.com/oracle-prices/pkg/server/sources/cex"
 	"tc.com/oracle-prices/pkg/server/sources/cosmwasm"
 	_ "tc.com/oracle-prices/pkg/server/sources/evm"
@@ -181,6 +182,7 @@ func main() {
 	logger.Info("Shutdown complete")
 }
 
+// nolint:gocognit // runServer initializes multiple components (gRPC, sources, aggregator, servers)
 func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) error {
 	// Initialize gRPC client for CosmWasm sources if any are enabled
 	var grpcClient *feederClient.Client
@@ -197,7 +199,7 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 			}
 
 			ir := codectypes.NewInterfaceRegistry()
-			clientCfg := feederClient.ClientConfig{
+			clientCfg := feederClient.Config{
 				Endpoints:         endpoints,
 				ChainID:           cfg.Feeder.ChainID,
 				InterfaceRegistry: ir,
@@ -224,7 +226,7 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	}
 
 	// Initialize sources
-	var allSources []sources.Source
+	allSources := make([]sources.Source, 0, len(cfg.Sources))
 	sourceWeights := make(map[string]float64) // Track weights for aggregation
 
 	for _, sourceCfg := range cfg.Sources {
@@ -269,7 +271,7 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	}
 
 	if len(allSources) == 0 {
-		return fmt.Errorf("no sources available")
+		return fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 
 	// Create aggregator based on configuration
@@ -289,33 +291,39 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		server.SetWebSocketServer(wsServer)
 
 		go func() {
-			if err := wsServer.Start(); err != nil {
+			if err := wsServer.Start(ctx); err != nil {
 				logger.Error("WebSocket server error", "error", err)
 			}
 		}()
 	}
 
-	go func() {
+	go func(ctx context.Context) {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
 		// Stop servers
-		server.Stop(shutdownCtx)
+		if err := server.Stop(shutdownCtx); err != nil {
+			logger.Error("Failed to stop HTTP server", "error", err)
+		}
 		if wsServer != nil {
 			wsServer.Stop()
 		}
 
 		// Stop sources
 		for _, source := range allSources {
-			source.Stop()
+			if err := source.Stop(); err != nil {
+				logger.Error("Failed to stop source", "source", source.Name(), "error", err)
+			}
 		}
 
 		// Close gRPC client if initialized
 		if grpcClient != nil {
-			grpcClient.Close()
+			if err := grpcClient.Close(); err != nil {
+				logger.Error("Failed to close gRPC client", "error", err)
+			}
 		}
-	}()
+	}(ctx)
 
 	return server.Start()
 }
@@ -331,11 +339,11 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	if cfg.Feeder.MnemonicEnv != "" {
 		mnemonic = os.Getenv(cfg.Feeder.MnemonicEnv)
 		if mnemonic == "" {
-			return fmt.Errorf("environment variable %s not set", cfg.Feeder.MnemonicEnv)
+			return fmt.Errorf("%w: %s", config.ErrMnemonicEnvNotSet, cfg.Feeder.MnemonicEnv)
 		}
 	}
 	if mnemonic == "" {
-		return fmt.Errorf("no mnemonic configured")
+		return fmt.Errorf("%w", config.ErrNoMnemonicConfigured)
 	}
 
 	// Determine HD derivation path
@@ -358,7 +366,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	encCfg := makeEncodingConfig()
 
 	// Convert GRPCEndpoint structs to EndpointConfig
-	var endpoints []feederClient.EndpointConfig
+	endpoints := make([]feederClient.EndpointConfig, 0, len(cfg.Feeder.GRPCEndpoints))
 	for _, ep := range cfg.Feeder.GRPCEndpoints {
 		endpoints = append(endpoints, feederClient.EndpointConfig{
 			Address: ep.ToAddress(),
@@ -367,7 +375,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	}
 
 	// Create gRPC client with properly configured interface registry
-	clientCfg := feederClient.ClientConfig{
+	clientCfg := feederClient.Config{
 		Endpoints:         endpoints,
 		ChainID:           cfg.Feeder.ChainID,
 		InterfaceRegistry: encCfg.InterfaceRegistry,
@@ -378,10 +386,10 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC client: %w", err)
 	}
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	// Log endpoint addresses
-	var addrs []string
+	addrs := make([]string, 0, len(endpoints))
 	for _, e := range endpoints {
 		addrs = append(addrs, e.Address)
 	}
@@ -401,7 +409,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 
 	// Configure Tendermint WebSocket URLs from RPC endpoints
 	// Convert RPCEndpoint structs to URLs
-	var rpcEndpoints []string
+	rpcEndpoints := make([]string, 0, len(cfg.Feeder.RPCEndpoints))
 	for _, rpcEp := range cfg.Feeder.RPCEndpoints {
 		rpcEndpoints = append(rpcEndpoints, rpcEp.ToURL())
 	}
@@ -459,7 +467,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	return v.Start(ctx)
 }
 
-// makeEncodingConfig creates an encoding config for transaction encoding
+// makeEncodingConfig creates an encoding config for transaction encoding.
 func makeEncodingConfig() EncodingConfig {
 	amino := codec.NewLegacyAmino()
 	interfaceRegistry := codectypes.NewInterfaceRegistry()

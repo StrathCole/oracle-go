@@ -20,7 +20,7 @@ import (
 	"tc.com/oracle-prices/pkg/feeder/price"
 )
 
-// MockEventStream simulates blockchain event stream for voting rounds
+// MockEventStream simulates blockchain event stream for voting rounds.
 type MockEventStream struct {
 	mock.Mock
 	events      chan interface{}
@@ -36,7 +36,7 @@ func NewMockEventStream() *MockEventStream {
 	}
 }
 
-func (m *MockEventStream) Start(ctx context.Context) error {
+func (m *MockEventStream) Start(_ context.Context) error {
 	m.mu.Lock()
 	m.started = true
 	m.mu.Unlock()
@@ -57,7 +57,7 @@ func (m *MockEventStream) Events() <-chan interface{} {
 	return m.events
 }
 
-// SendBlockEvent sends a new block event
+// SendBlockEvent sends a new block event.
 func (m *MockEventStream) SendBlockEvent() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -77,7 +77,7 @@ func (m *MockEventStream) SendBlockEvent() {
 	}
 }
 
-// SendVotePeriodEvent sends a vote period event
+// SendVotePeriodEvent sends a vote period event.
 func (m *MockEventStream) SendVotePeriodEvent(period uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -96,7 +96,7 @@ func (m *MockEventStream) SendVotePeriodEvent(period uint64) {
 	}
 }
 
-// SendOracleParamsEvent sends oracle parameter update event
+// SendOracleParamsEvent sends oracle parameter update event.
 func (m *MockEventStream) SendOracleParamsEvent(votePeriod uint64, whitelist []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -116,14 +116,14 @@ func (m *MockEventStream) SendOracleParamsEvent(votePeriod uint64, whitelist []s
 	}
 }
 
-// GetCurrentHeight returns the current block height
+// GetCurrentHeight returns the current block height.
 func (m *MockEventStream) GetCurrentHeight() int64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.blockHeight
 }
 
-// TestVotingRoundWithEventStream tests a complete voting round with event stream
+// TestVotingRoundWithEventStream tests a complete voting round with event stream.
 func TestVotingRoundWithEventStream(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -154,7 +154,7 @@ func TestVotingRoundWithEventStream(t *testing.T) {
 	// Start event stream
 	err := mockEventStream.Start(ctx)
 	require.NoError(t, err)
-	defer mockEventStream.Stop()
+	defer func() { _ = mockEventStream.Stop() }()
 
 	// Send initial oracle params
 	mockEventStream.SendOracleParamsEvent(votePeriodBlocks, whitelist)
@@ -183,6 +183,7 @@ func TestVotingRoundWithEventStream(t *testing.T) {
 
 		// Calculate vote period from block height
 		// Formula: votePeriod = blockHeight / votePeriodBlocks
+		// #nosec G115 -- Current height always non-negative
 		expectedPeriod := uint64(currentHeight) / votePeriodBlocks
 
 		// Send vote period event
@@ -212,7 +213,7 @@ func TestVotingRoundWithEventStream(t *testing.T) {
 	// mockPriceClient.AssertExpectations(t)
 }
 
-// TestVotingRoundTiming tests the timing of voting rounds
+// TestVotingRoundTiming tests the timing of voting rounds.
 func TestVotingRoundTiming(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -224,7 +225,7 @@ func TestVotingRoundTiming(t *testing.T) {
 	mockEventStream := NewMockEventStream()
 	err := mockEventStream.Start(ctx)
 	require.NoError(t, err)
-	defer mockEventStream.Stop()
+	defer func() { _ = mockEventStream.Stop() }()
 
 	votePeriodBlocks := uint64(5)
 
@@ -246,6 +247,7 @@ func TestVotingRoundTiming(t *testing.T) {
 
 				// Calculate and send vote period every votePeriodBlocks
 				currentHeight := mockEventStream.GetCurrentHeight()
+				// #nosec G115 -- Height always non-negative
 				if currentHeight%int64(votePeriodBlocks) == 0 {
 					period := uint64(currentHeight) / votePeriodBlocks
 					mockEventStream.SendVotePeriodEvent(period)
@@ -273,7 +275,7 @@ func TestVotingRoundTiming(t *testing.T) {
 	}
 }
 
-// TestPriceToVoteConversion tests converting prices to vote format
+// TestPriceToVoteConversion tests converting prices to vote format.
 func TestPriceToVoteConversion(t *testing.T) {
 	// Test prices
 	prices := map[string]decimal.Decimal{
@@ -313,7 +315,7 @@ func TestPriceToVoteConversion(t *testing.T) {
 	assert.InDelta(t, 0.02, denomMap["UST"].Price, 0.0001)
 }
 
-// TestPrevoteHashCalculation tests prevote hash calculation
+// TestPrevoteHashCalculation tests prevote hash calculation.
 func TestPrevoteHashCalculation(t *testing.T) {
 	// Create test prices
 	testPrices := []oracle.Price{
@@ -347,7 +349,7 @@ func TestPrevoteHashCalculation(t *testing.T) {
 	assert.Contains(t, prevote.Vote, "uusd")
 }
 
-// TestMultipleValidators tests voting for multiple validators
+// TestMultipleValidators tests voting for multiple validators.
 func TestMultipleValidators(t *testing.T) {
 	// Create different test addresses
 	testBytes1 := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
@@ -379,7 +381,7 @@ func TestMultipleValidators(t *testing.T) {
 	assert.NotEqual(t, prevote1.Msg.Hash, prevote2.Msg.Hash)
 }
 
-// TestVotePeriodDetection tests detecting new vote periods from block events
+// TestVotePeriodDetection tests detecting new vote periods from block events.
 func TestVotePeriodDetection(t *testing.T) {
 	votePeriodBlocks := uint64(5)
 
@@ -399,7 +401,8 @@ func TestVotePeriodDetection(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("Height_%d", tc.blockHeight), func(t *testing.T) {
-			period := uint64(tc.blockHeight) / votePeriodBlocks
+			period := uint64(tc.blockHeight) / votePeriodBlocks // #nosec G115 -- Block height always non-negative
+			// #nosec G115 -- Block height always non-negative
 			isNewPeriod := tc.blockHeight%int64(votePeriodBlocks) == 0
 
 			assert.Equal(t, tc.expectedPeriod, period)
@@ -408,7 +411,7 @@ func TestVotePeriodDetection(t *testing.T) {
 	}
 }
 
-// TestWhitelistFiltering tests that only whitelisted denoms are included in votes
+// TestWhitelistFiltering tests that only whitelisted denoms are included in votes.
 func TestWhitelistFilteringInVote(t *testing.T) {
 	v := &Voter{}
 
@@ -438,8 +441,8 @@ func TestWhitelistFilteringInVote(t *testing.T) {
 	assert.False(t, denoms["ueth"]) // ETH should be filtered out
 }
 
-// TestRealRPCConnection tests connecting to the real Terra Classic RPC
-// This test is skipped in short mode and requires network access
+// TestRealRPCConnection tests connecting to the real Terra Classic RPC.
+// This test is skipped in short mode and requires network access.
 func TestRealRPCConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping real RPC integration test in short mode")
@@ -458,7 +461,7 @@ func TestRealRPCConnection(t *testing.T) {
 	// Create gRPC client with proper interface registry
 	ir := codectypes.NewInterfaceRegistry()
 
-	clientCfg := client.ClientConfig{
+	clientCfg := client.Config{
 		Endpoints: []client.EndpointConfig{
 			{Address: grpcEndpoint, TLS: true},
 		},
@@ -469,7 +472,7 @@ func TestRealRPCConnection(t *testing.T) {
 
 	grpcClient, err := client.NewClient(clientCfg)
 	require.NoError(t, err, "Failed to create gRPC client")
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	// Test 1: Query oracle parameters
 	t.Run("QueryOracleParams", func(t *testing.T) {
@@ -530,8 +533,8 @@ func TestRealRPCConnection(t *testing.T) {
 	})
 }
 
-// TestRealPriceSourceConnection tests connecting to a real price source
-// This requires the price server to be running on localhost:8080
+// TestRealPriceSourceConnection tests connecting to a real price source.
+// This requires the price server to be running on localhost:8080.
 func TestRealPriceSourceConnection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping real price source integration test in short mode")
@@ -563,8 +566,8 @@ func TestRealPriceSourceConnection(t *testing.T) {
 	}
 }
 
-// TestEndToEndVotingSimulation simulates a complete voting round with real RPC
-// This test requires both network access and validates vote construction
+// TestEndToEndVotingSimulation simulates a complete voting round with real RPC.
+// This test requires both network access and validates vote construction.
 func TestEndToEndVotingSimulation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping end-to-end voting simulation in short mode")
@@ -582,7 +585,7 @@ func TestEndToEndVotingSimulation(t *testing.T) {
 	// Create gRPC client
 	ir := codectypes.NewInterfaceRegistry()
 
-	clientCfg := client.ClientConfig{
+	clientCfg := client.Config{
 		Endpoints: []client.EndpointConfig{
 			{Address: grpcEndpoint, TLS: true},
 		},
@@ -593,7 +596,7 @@ func TestEndToEndVotingSimulation(t *testing.T) {
 
 	grpcClient, err := client.NewClient(clientCfg)
 	require.NoError(t, err, "Failed to create gRPC client")
-	defer grpcClient.Close()
+	defer func() { _ = grpcClient.Close() }()
 
 	// Query oracle parameters
 	params, err := grpcClient.GetOracleParams(ctx)

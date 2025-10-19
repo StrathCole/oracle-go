@@ -14,7 +14,7 @@ import (
 	_ "tc.com/oracle-prices/pkg/server/sources/oracle" // Register oracle sources
 )
 
-// TestRealCEXSources tests all enabled CEX sources from config
+// nolint:gocognit // TestRealCEXSources comprehensively tests all enabled CEX sources with nested loops and validations
 func TestRealCEXSources(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -50,7 +50,7 @@ func TestRealCEXSources(t *testing.T) {
 			if err := source.Start(ctx); err != nil {
 				t.Fatalf("Failed to start: %v", err)
 			}
-			defer source.Stop()
+			defer func() { _ = source.Stop() }()
 
 			// Wait for prices
 			time.Sleep(5 * time.Second)
@@ -86,17 +86,17 @@ func TestRealCEXSources(t *testing.T) {
 
 				// Validate reasonable ranges for known pairs
 				if symbol == "BTC/USD" || symbol == "BTC/USDT" {
-					min := decimal.NewFromInt(10000)  // BTC > $10k
-					max := decimal.NewFromInt(200000) // BTC < $200k
-					if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
+					minPrice := decimal.NewFromInt(10000)  // BTC > $10k
+					maxPrice := decimal.NewFromInt(200000) // BTC < $200k
+					if price.Price.LessThan(minPrice) || price.Price.GreaterThan(maxPrice) {
 						t.Errorf("%s price out of expected range: %s", symbol, price.Price.String())
 					}
 				}
 
 				if symbol == "LUNC/USD" || symbol == "LUNC/USDT" {
-					min := decimal.NewFromFloat(0.000001)
-					max := decimal.NewFromFloat(0.01)
-					if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
+					minPrice := decimal.NewFromFloat(0.000001)
+					maxPrice := decimal.NewFromFloat(0.01)
+					if price.Price.LessThan(minPrice) || price.Price.GreaterThan(maxPrice) {
 						t.Logf("WARNING: %s price possibly out of range: %s", symbol, price.Price.String())
 					}
 				}
@@ -110,7 +110,7 @@ func TestRealCEXSources(t *testing.T) {
 	}
 }
 
-// TestRealFiatSources tests all enabled fiat sources from config
+// nolint:gocognit // TestRealFiatSources comprehensively tests all enabled fiat sources with nested loops and validations
 func TestRealFiatSources(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -142,7 +142,7 @@ func TestRealFiatSources(t *testing.T) {
 			if err := source.Start(ctx); err != nil {
 				t.Fatalf("Failed to start: %v", err)
 			}
-			defer source.Stop()
+			defer func() { _ = source.Stop() }()
 
 			time.Sleep(5 * time.Second)
 
@@ -164,9 +164,9 @@ func TestRealFiatSources(t *testing.T) {
 
 				// Fiat rates should be reasonable
 				if symbol == "EUR/USD" {
-					min := decimal.NewFromFloat(0.8)
-					max := decimal.NewFromFloat(1.5)
-					if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
+					minPrice := decimal.NewFromFloat(0.8)
+					maxPrice := decimal.NewFromFloat(1.5)
+					if price.Price.LessThan(minPrice) || price.Price.GreaterThan(maxPrice) {
 						t.Errorf("EUR/USD out of range: %s", price.Price.String())
 					}
 				}
@@ -179,7 +179,7 @@ func TestRealFiatSources(t *testing.T) {
 	}
 }
 
-// TestRealBandProtocol tests Band Protocol oracle source
+// TestRealBandProtocol tests Band Protocol oracle source.
 func TestRealBandProtocol(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -217,7 +217,9 @@ func TestRealBandProtocol(t *testing.T) {
 	if err := source.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
-	defer source.Stop()
+	defer func() {
+		_ = source.Stop()
+	}()
 
 	time.Sleep(5 * time.Second)
 
@@ -247,9 +249,9 @@ func TestRealBandProtocol(t *testing.T) {
 
 		// Validate known pairs
 		if symbol == "BTC/USD" {
-			min := decimal.NewFromInt(10000)
-			max := decimal.NewFromInt(200000)
-			if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
+			minPrice := decimal.NewFromInt(10000)
+			maxPrice := decimal.NewFromInt(200000)
+			if price.Price.LessThan(minPrice) || price.Price.GreaterThan(maxPrice) {
 				t.Errorf("BTC/USD out of range: %s", price.Price.String())
 			}
 		}
@@ -260,7 +262,7 @@ func TestRealBandProtocol(t *testing.T) {
 	}
 }
 
-// TestRealEVMSource tests EVM source (PancakeSwap BSC)
+// TestRealEVMSource tests EVM source (PancakeSwap BSC).
 func TestRealEVMSource(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -298,7 +300,9 @@ func TestRealEVMSource(t *testing.T) {
 	if err := source.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
-	defer source.Stop()
+	defer func() {
+		_ = source.Stop()
+	}()
 
 	time.Sleep(5 * time.Second)
 
@@ -308,7 +312,7 @@ func TestRealEVMSource(t *testing.T) {
 	}
 
 	if len(prices) == 0 {
-		t.Error("No prices returned from PancakeSwap BSC")
+		t.Error("No prices returned from PancakeSwap")
 	}
 
 	for symbol, price := range prices {
@@ -328,9 +332,9 @@ func TestRealEVMSource(t *testing.T) {
 
 		// LUNC/USDT should be in reasonable range
 		if symbol == "LUNC/USDT" {
-			min := decimal.NewFromFloat(0.000001)
-			max := decimal.NewFromFloat(0.01)
-			if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
+			minPrice := decimal.NewFromFloat(0.000001)
+			maxPrice := decimal.NewFromFloat(0.01)
+			if price.Price.LessThan(minPrice) || price.Price.GreaterThan(maxPrice) {
 				t.Logf("WARNING: LUNC/USDT price possibly out of range: %s", price.Price.String())
 			}
 		}
@@ -341,7 +345,7 @@ func TestRealEVMSource(t *testing.T) {
 	}
 }
 
-// TestRealCosmWasmSources tests CosmWasm DEX sources on Terra Classic
+// TestRealCosmWasmSources tests CosmWasm DEX sources on Terra Classic.
 func TestRealCosmWasmSources(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -392,7 +396,7 @@ func TestRealCosmWasmSources(t *testing.T) {
 	}
 }
 
-// TestRealBinance tests Binance WebSocket (no API key required)
+// TestRealBinance tests Binance WebSocket (no API key required).
 func TestRealBinance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -421,7 +425,9 @@ func TestRealBinance(t *testing.T) {
 	if err := source.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
-	defer source.Stop()
+	defer func() {
+		_ = source.Stop()
+	}()
 
 	// Wait for WebSocket connection and initial data
 	time.Sleep(8 * time.Second)
@@ -443,9 +449,9 @@ func TestRealBinance(t *testing.T) {
 		}
 
 		if symbol == "BTC/USDT" {
-			min := decimal.NewFromInt(10000)
-			max := decimal.NewFromInt(200000)
-			if price.Price.LessThan(min) || price.Price.GreaterThan(max) {
+			minPrice := decimal.NewFromInt(10000)
+			maxPrice := decimal.NewFromInt(200000)
+			if price.Price.LessThan(minPrice) || price.Price.GreaterThan(maxPrice) {
 				t.Errorf("BTC/USDT out of range: %s", price.Price.String())
 			}
 		}
@@ -456,12 +462,8 @@ func TestRealBinance(t *testing.T) {
 	}
 }
 
-// TestRealBitfinex tests Bitfinex REST API (no API key required)
+// TestRealBitfinex tests Bitfinex REST API (no API key required).
 func TestRealBitfinex(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	config := map[string]interface{}{
 		"pairs": map[string]interface{}{
 			"BTC/USD": "tBTCUSD",
@@ -469,54 +471,11 @@ func TestRealBitfinex(t *testing.T) {
 			"XRP/USD": "tXRPUSD",
 		},
 	}
-
-	source, err := sources.Create("cex", "bitfinex", config)
-	if err != nil {
-		t.Fatalf("Failed to create Bitfinex source: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := source.Initialize(ctx); err != nil {
-		t.Fatalf("Failed to initialize: %v", err)
-	}
-
-	if err := source.Start(ctx); err != nil {
-		t.Fatalf("Failed to start: %v", err)
-	}
-	defer source.Stop()
-
-	time.Sleep(5 * time.Second)
-
-	prices, err := source.GetPrices(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get prices: %v", err)
-	}
-
-	if len(prices) == 0 {
-		t.Error("No prices returned from Bitfinex")
-	}
-
-	for symbol, price := range prices {
-		t.Logf("Bitfinex %s: %s", symbol, price.Price.String())
-
-		if price.Price.LessThanOrEqual(decimal.Zero) {
-			t.Errorf("Invalid price for %s: %s", symbol, price.Price.String())
-		}
-	}
-
-	if !source.IsHealthy() {
-		t.Error("Bitfinex should be healthy after successful fetch")
-	}
+	testCEXSource(t, "bitfinex", config, "Bitfinex should be healthy after successful fetch")
 }
 
-// TestRealBybit tests Bybit REST API (no API key required)
+// TestRealBybit tests Bybit REST API (no API key required).
 func TestRealBybit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	config := map[string]interface{}{
 		"pairs": map[string]interface{}{
 			"BTC/USDT":  "BTCUSDT",
@@ -524,54 +483,11 @@ func TestRealBybit(t *testing.T) {
 			"LUNC/USDT": "LUNCUSDT",
 		},
 	}
-
-	source, err := sources.Create("cex", "bybit", config)
-	if err != nil {
-		t.Fatalf("Failed to create Bybit source: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := source.Initialize(ctx); err != nil {
-		t.Fatalf("Failed to initialize: %v", err)
-	}
-
-	if err := source.Start(ctx); err != nil {
-		t.Fatalf("Failed to start: %v", err)
-	}
-	defer source.Stop()
-
-	time.Sleep(5 * time.Second)
-
-	prices, err := source.GetPrices(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get prices: %v", err)
-	}
-
-	if len(prices) == 0 {
-		t.Error("No prices returned from Bybit")
-	}
-
-	for symbol, price := range prices {
-		t.Logf("Bybit %s: %s", symbol, price.Price.String())
-
-		if price.Price.LessThanOrEqual(decimal.Zero) {
-			t.Errorf("Invalid price for %s: %s", symbol, price.Price.String())
-		}
-	}
-
-	if !source.IsHealthy() {
-		t.Error("Bybit should be healthy after successful fetch")
-	}
+	testCEXSource(t, "bybit", config, "Bybit should be healthy after successful fetch")
 }
 
-// TestRealGateIO tests Gate.io REST API (no API key required)
+// TestRealGateIO tests Gate.io REST API (no API key required).
 func TestRealGateIO(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	config := map[string]interface{}{
 		"pairs": map[string]interface{}{
 			"BTC/USDT":  "BTC_USDT",
@@ -579,54 +495,11 @@ func TestRealGateIO(t *testing.T) {
 			"LUNC/USDT": "LUNC_USDT",
 		},
 	}
-
-	source, err := sources.Create("cex", "gateio", config)
-	if err != nil {
-		t.Fatalf("Failed to create Gate.io source: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := source.Initialize(ctx); err != nil {
-		t.Fatalf("Failed to initialize: %v", err)
-	}
-
-	if err := source.Start(ctx); err != nil {
-		t.Fatalf("Failed to start: %v", err)
-	}
-	defer source.Stop()
-
-	time.Sleep(5 * time.Second)
-
-	prices, err := source.GetPrices(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get prices: %v", err)
-	}
-
-	if len(prices) == 0 {
-		t.Error("No prices returned from Gate.io")
-	}
-
-	for symbol, price := range prices {
-		t.Logf("Gate.io %s: %s", symbol, price.Price.String())
-
-		if price.Price.LessThanOrEqual(decimal.Zero) {
-			t.Errorf("Invalid price for %s: %s", symbol, price.Price.String())
-		}
-	}
-
-	if !source.IsHealthy() {
-		t.Error("Gate.io should be healthy after successful fetch")
-	}
+	testCEXSource(t, "gateio", config, "Gate.io should be healthy after successful fetch")
 }
 
-// TestRealOKX tests OKX REST API (no API key required)
+// TestRealOKX tests OKX REST API (no API key required).
 func TestRealOKX(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	config := map[string]interface{}{
 		"pairs": map[string]interface{}{
 			"BTC/USDT":  "BTC-USDT",
@@ -634,10 +507,19 @@ func TestRealOKX(t *testing.T) {
 			"LUNC/USDT": "LUNC-USDT",
 		},
 	}
+	testCEXSource(t, "okx", config, "OKX should be healthy after successful fetch")
+}
 
-	source, err := sources.Create("cex", "okx", config)
+// testCEXSource is a helper to reduce duplication in CEX integration tests.
+func testCEXSource(t *testing.T, sourceName string, config map[string]interface{}, healthyMsg string) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	source, err := sources.Create("cex", sourceName, config)
 	if err != nil {
-		t.Fatalf("Failed to create OKX source: %v", err)
+		t.Fatalf("Failed to create %s source: %v", sourceName, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -650,7 +532,9 @@ func TestRealOKX(t *testing.T) {
 	if err := source.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
-	defer source.Stop()
+	defer func() {
+		_ = source.Stop()
+	}()
 
 	time.Sleep(5 * time.Second)
 
@@ -660,11 +544,11 @@ func TestRealOKX(t *testing.T) {
 	}
 
 	if len(prices) == 0 {
-		t.Error("No prices returned from OKX")
+		t.Errorf("No prices returned from %s", sourceName)
 	}
 
 	for symbol, price := range prices {
-		t.Logf("OKX %s: %s", symbol, price.Price.String())
+		t.Logf("%s %s: %s", sourceName, symbol, price.Price.String())
 
 		if price.Price.LessThanOrEqual(decimal.Zero) {
 			t.Errorf("Invalid price for %s: %s", symbol, price.Price.String())
@@ -672,6 +556,6 @@ func TestRealOKX(t *testing.T) {
 	}
 
 	if !source.IsHealthy() {
-		t.Error("OKX should be healthy after successful fetch")
+		t.Error(healthyMsg)
 	}
 }

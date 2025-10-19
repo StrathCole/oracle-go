@@ -1,6 +1,7 @@
+// Package eventstream provides event stream handling for the oracle feeder.
 package eventstream
 
-// VotingPeriod contains information about a voting period that has started
+// VotingPeriod contains information about a voting period that has started.
 type VotingPeriod struct {
 	// Height is the block height at which this voting period starts
 	Height uint64
@@ -8,7 +9,7 @@ type VotingPeriod struct {
 	Period uint64
 }
 
-// Params contains oracle parameters needed for price feeding
+// Params contains oracle parameters needed for price feeding.
 type Params struct {
 	// VotePeriod is the number of blocks per voting period
 	VotePeriod uint64
@@ -16,7 +17,7 @@ type Params struct {
 	Whitelist []string
 }
 
-// EventStream defines the interface for receiving blockchain events
+// EventStream defines the interface for receiving blockchain events.
 type EventStream interface {
 	// VotingPeriodStarted returns a channel that signals when a new voting period begins
 	VotingPeriodStarted() <-chan VotingPeriod

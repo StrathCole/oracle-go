@@ -17,7 +17,7 @@ import (
 // where exchange_rate is the current market rate in USD per unit of currency (XXX/USD)
 //
 // These are the official fixed amounts decided by the IMF Executive Board.
-// The amounts are reviewed every 5 years (next review: 2027)
+// The amounts are reviewed every 5 years (next review: 2027).
 var sdrBasketAmounts = map[string]float64{
 	"USD": 0.57813,  // US Dollar
 	"EUR": 0.37379,  // Euro
@@ -26,8 +26,8 @@ var sdrBasketAmounts = map[string]float64{
 	"GBP": 0.080870, // British Pound Sterling
 }
 
-// SDRSource calculates SDR/USD rate from basket currencies
-// This is a fallback when IMF HTML scraping fails
+// SDRSource calculates SDR/USD rate from basket currencies.
+// This is a fallback when IMF HTML scraping fails.
 type SDRSource struct {
 	*sources.BaseSource
 
@@ -38,6 +38,7 @@ type SDRSource struct {
 	fiatSources []sources.Source
 }
 
+// NewSDRSourceFromConfig creates a new SDRSource from config.
 func NewSDRSourceFromConfig(cfg map[string]interface{}) (sources.Source, error) {
 	timeout := 10
 	if t, ok := cfg["timeout"].(int); ok {
@@ -68,10 +69,12 @@ func NewSDRSourceFromConfig(cfg map[string]interface{}) (sources.Source, error) 
 	return s, nil
 }
 
-func (s *SDRSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *SDRSource) Initialize(_ context.Context) error {
 	return nil
 }
 
+// Start starts the SDR source.
 func (s *SDRSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting SDR source")
 
@@ -96,14 +99,14 @@ func (s *SDRSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// SetFiatSources sets the fiat sources to use for basket calculation
+// SetFiatSources sets the fiat sources to use for basket calculation.
 func (s *SDRSource) SetFiatSources(sources []sources.Source) {
 	s.fiatSources = sources
 }
 
 func (s *SDRSource) calculateSDR(ctx context.Context) error {
 	if len(s.fiatSources) == 0 {
-		return fmt.Errorf("no fiat sources available for SDR calculation")
+		return fmt.Errorf("%w", ErrNoFiatSourcesAvailable)
 	}
 
 	// Collect exchange rates from fiat sources
@@ -135,11 +138,11 @@ func (s *SDRSource) calculateSDR(ctx context.Context) error {
 	}
 
 	if len(missing) > 0 {
-		return fmt.Errorf("missing basket currencies: %v", missing)
+		return fmt.Errorf("%w: %v", ErrMissingBasketCurr, missing)
 	}
 
 	// Calculate SDR value: SDR/USD = Σ(currency_amount × exchange_rate)
-	var sdrValue decimal.Decimal = decimal.Zero
+	var sdrValue = decimal.Zero
 
 	for currency, amount := range sdrBasketAmounts {
 		rate := rates[currency]
@@ -148,7 +151,7 @@ func (s *SDRSource) calculateSDR(ctx context.Context) error {
 	}
 
 	if sdrValue.LessThanOrEqual(decimal.Zero) {
-		return fmt.Errorf("invalid SDR value: %s", sdrValue.String())
+		return fmt.Errorf("%w: %s", ErrInvalidSDRValue, sdrValue.String())
 	}
 
 	now := time.Now()
@@ -163,19 +166,23 @@ func (s *SDRSource) calculateSDR(ctx context.Context) error {
 	return nil
 }
 
+// Type returns the source type.
 func (s *SDRSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *SDRSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *SDRSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *SDRSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
+// Stop stops the SDR source.
 func (s *SDRSource) Stop() error {
 	s.Close()
 	return nil

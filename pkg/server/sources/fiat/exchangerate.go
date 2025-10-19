@@ -12,9 +12,15 @@ import (
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
+const (
+	baseCurrency = "USD"
+	xdrDenom     = "XDR"
+	sdrUsdPair   = "SDR/USD"
+)
+
 // ExchangeRateSource fetches fiat prices from exchangerate.host API
 // https://exchangerate.host/#/#our-services
-// Requires API key (paid service)
+// Requires API key (paid service).
 type ExchangeRateSource struct {
 	*sources.BaseSource
 
@@ -30,28 +36,31 @@ type exchangeRateResponse struct {
 	Error   interface{}        `json:"error,omitempty"`
 }
 
+// NewExchangeRateSourceFromConfig creates a new ExchangeRateSource from config.
+//
+//nolint:dupl
 func NewExchangeRateSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbols, ok := config["symbols"].([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("symbols must be an array")
+		return nil, fmt.Errorf("%w", ErrSymbolsMustBeArray)
 	}
 
 	symbolStrs := make([]string, 0, len(symbols))
 	for _, s := range symbols {
 		if str, ok := s.(string); ok {
-			if strings.HasSuffix(str, "/USD") || str == "SDR/USD" {
+			if strings.HasSuffix(str, "/"+baseCurrency) || str == sdrUsdPair {
 				symbolStrs = append(symbolStrs, str)
 			}
 		}
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("no valid symbols for ExchangeRate")
+		return nil, fmt.Errorf("%w", ErrNoValidSymbolsExchange)
 	}
 
 	apiKey, ok := config["api_key"].(string)
 	if !ok {
-		return nil, fmt.Errorf("api_key is required for ExchangeRate")
+		return nil, fmt.Errorf("%w", ErrAPIKeyRequiredExchange)
 	}
 
 	timeout := 5 * time.Second
@@ -67,12 +76,12 @@ func NewExchangeRateSourceFromConfig(config map[string]interface{}) (sources.Sou
 	// Get logger from config (passed from main.go)
 	logger := sources.GetLoggerFromConfig(config)
 	if logger == nil {
-		return nil, fmt.Errorf("logger not provided in config")
+		return nil, fmt.Errorf("%w", ErrLoggerNotProvided)
 	}
 
 	pairs := make(map[string]string)
 	for _, symbol := range symbolStrs {
-		pairs[symbol] = "USD"
+		pairs[symbol] = baseCurrency
 	}
 
 	baseSource := sources.NewBaseSource("exchangerate", sources.SourceTypeFiat, pairs, logger)
@@ -91,6 +100,7 @@ func NewExchangeRateSourceFromConfig(config map[string]interface{}) (sources.Sou
 	return s, nil
 }
 
+// Initialize initializes the ExchangeRate source.
 func (s *ExchangeRateSource) Initialize(ctx context.Context) error {
 	s.Logger().Info("Starting ExchangeRate source")
 
@@ -102,6 +112,7 @@ func (s *ExchangeRateSource) Initialize(ctx context.Context) error {
 	return nil
 }
 
+// Start starts the ExchangeRate source.
 func (s *ExchangeRateSource) Start(ctx context.Context) error {
 	go func() {
 		ticker := time.NewTicker(s.interval)
@@ -125,62 +136,7 @@ func (s *ExchangeRateSource) Start(ctx context.Context) error {
 }
 
 func (s *ExchangeRateSource) fetchWithRetries(ctx context.Context) error {
-	maxRetries := 5
-	initialBackoff := time.Second
-	maxBackoff := 2 * time.Minute
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		// Check if we should stop
-		select {
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during retry")
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		err := s.fetchPrices(ctx)
-		if err == nil {
-			s.SetHealthy(true)
-			return nil
-		}
-
-		lastErr = err
-		s.Logger().Warn("Fetch attempt failed",
-			"attempt", attempt,
-			"max_retries", maxRetries,
-			"error", err,
-		)
-
-		if attempt == maxRetries {
-			break
-		}
-
-		// Calculate backoff with exponential growth
-		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-
-		s.Logger().Debug("Retrying after backoff",
-			"backoff", backoff,
-			"attempt", attempt+1,
-		)
-
-		select {
-		case <-time.After(backoff):
-			// Continue to next attempt
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during backoff")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	s.SetHealthy(false)
-	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
-	return lastErr
+	return FetchWithRetriesBase(ctx, s.BaseSource, s.StopChan(), s.fetchPrices)
 }
 
 func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
@@ -190,11 +146,11 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	// SDR/USD -> XDR, EUR/USD -> EUR, etc.
 	apiSymbols := make([]string, 0, len(symbols))
 	for _, symbol := range symbols {
-		if symbol == "SDR/USD" {
-			apiSymbols = append(apiSymbols, "XDR")
+		if symbol == sdrUsdPair {
+			apiSymbols = append(apiSymbols, xdrDenom)
 		} else {
 			// Remove /USD suffix
-			apiSymbols = append(apiSymbols, strings.Replace(symbol, "/USD", "", 1))
+			apiSymbols = append(apiSymbols, strings.Replace(symbol, "/"+baseCurrency, "", 1))
 		}
 	}
 
@@ -213,16 +169,16 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	var data exchangeRateResponse
@@ -231,7 +187,7 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if !data.Success || data.Rates == nil {
-		return fmt.Errorf("invalid response: success=%v, error=%v", data.Success, data.Error)
+		return fmt.Errorf("%w: success=%v, error=%v", ErrInvalidResponse, data.Success, data.Error)
 	}
 
 	// Convert prices
@@ -242,10 +198,10 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	for symbol, rate := range data.Rates {
 		// Convert back to our format
 		var targetSymbol string
-		if symbol == "XDR" {
-			targetSymbol = "SDR/USD"
+		if symbol == xdrDenom {
+			targetSymbol = sdrUsdPair
 		} else {
-			targetSymbol = symbol + "/USD"
+			targetSymbol = symbol + "/" + baseCurrency
 		}
 
 		// Invert the rate (they give USD/XXX, we need XXX/USD)
@@ -259,19 +215,23 @@ func (s *ExchangeRateSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
+// Type returns the source type.
 func (s *ExchangeRateSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *ExchangeRateSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *ExchangeRateSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *ExchangeRateSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
+// Stop stops the ExchangeRate source.
 func (s *ExchangeRateSource) Stop() error {
 	s.Close()
 	return nil

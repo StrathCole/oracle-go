@@ -1,0 +1,52 @@
+# Binaries
+/build/
+/oracle-go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.html
+coverage.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Configuration (should be user-specific)
+config/my-config.yaml
+config/local-*.yaml
+*.env
+
+# Keystore files (never commit!)
+*.json
+!config.json
+!package.json
+!tsconfig.json
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
+# Node modules (if any)
+node_modules/

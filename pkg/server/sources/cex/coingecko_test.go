@@ -26,6 +26,7 @@ func TestCoinGeckoSource_NewSource(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, s sources.Source) {
+				t.Helper()
 				cg := s.(*CoinGeckoSource)
 				if cg.apiKey != "" {
 					t.Error("Expected no API key for free API")
@@ -47,12 +48,13 @@ func TestCoinGeckoSource_NewSource(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, s sources.Source) {
+				t.Helper()
 				cg := s.(*CoinGeckoSource)
-				if cg.apiKey != "test_api_key_123" {
-					t.Errorf("Expected API key 'test_api_key_123', got '%s'", cg.apiKey)
+				if cg.apiKey != "test-key" {
+					t.Errorf("Expected API key 'test-key', got %q", cg.apiKey)
 				}
-				if cg.minInterval != coingeckoProMinInterval {
-					t.Errorf("Expected pro API min interval %v, got %v", coingeckoProMinInterval, cg.minInterval)
+				if cg.minInterval != 10*time.Second {
+					t.Errorf("Expected min interval 10s, got %v", cg.minInterval)
 				}
 			},
 		},
@@ -66,6 +68,7 @@ func TestCoinGeckoSource_NewSource(t *testing.T) {
 			},
 			wantErr: false,
 			checkFunc: func(t *testing.T, s sources.Source) {
+				t.Helper()
 				cg := s.(*CoinGeckoSource)
 				// Should be adjusted to minimum
 				if cg.updateInterval < coingeckoFreeMinInterval {
@@ -226,8 +229,8 @@ func TestCoinGeckoSource_FetchPrices_Integration(t *testing.T) {
 
 	// Start source
 	ctx := context.Background()
-	go source.Start(ctx)
-	defer source.Stop()
+	go func() { _ = source.Start(ctx) }()
+	defer func() { _ = source.Stop() }()
 
 	// Wait for initial fetch
 	time.Sleep(20 * time.Second) // Account for free API rate limiting

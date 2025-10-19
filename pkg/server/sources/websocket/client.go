@@ -1,8 +1,8 @@
+// Package websocket provides WebSocket client functionality for price sources.
 package websocket
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -11,11 +11,13 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Client represents a WebSocket client with reconnection support
+// Client represents a WebSocket client with reconnection support.
 type Client struct {
 	url           string
 	conn          *websocket.Conn
 	connMu        sync.RWMutex
+	ctx           context.Context    // Store context for reconnections
+	cancel        context.CancelFunc // Store cancel for cleanup
 	reconnectWait time.Duration
 	maxRetries    int
 	pingInterval  time.Duration
@@ -36,11 +38,11 @@ type Client struct {
 	// State
 	connected bool
 	stateMu   sync.RWMutex
-	closed    bool      // Tracks if Close() has been called
+	closed    bool       // Tracks if Close() has been called
 	closeMu   sync.Mutex // Protects closed flag
 }
 
-// Config holds WebSocket client configuration
+// Config holds WebSocket client configuration.
 type Config struct {
 	URL           string
 	ReconnectWait time.Duration
@@ -52,7 +54,7 @@ type Config struct {
 	Headers       http.Header // Custom headers for WebSocket handshake
 }
 
-// NewClient creates a new WebSocket client
+// NewClient creates a new WebSocket client.
 func NewClient(cfg Config) *Client {
 	if cfg.ReconnectWait == 0 {
 		cfg.ReconnectWait = 5 * time.Second
@@ -84,22 +86,34 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-// SetHandlers sets the event handlers
+// SetHandlers sets the event handlers.
 func (c *Client) SetHandlers(onMessage func([]byte), onConnect func(), onDisconnect func(error)) {
 	c.onMessage = onMessage
 	c.onConnect = onConnect
 	c.onDisconnect = onDisconnect
 }
 
-// Connect establishes the WebSocket connection
+// Connect establishes the WebSocket connection.
 func (c *Client) Connect(ctx context.Context) error {
+	// Cancel previous context if it exists
+	if c.cancel != nil {
+		c.cancel()
+	}
+
+	// Store context for reconnections (inherit from provided context)
+	c.ctx, c.cancel = context.WithCancel(ctx)
+
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
 	// Use custom headers if provided (for authentication, etc.)
-	conn, _, err := dialer.DialContext(ctx, c.url, c.headers)
+	// Pass context directly to DialContext, will store for reconnections
+	conn, resp, err := dialer.DialContext(ctx, c.url, c.headers)
 	if err != nil {
 		return err
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close() // Close handshake response body
 	}
 
 	c.connMu.Lock()
@@ -122,7 +136,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// ConnectWithRetry connects with automatic retry
+// ConnectWithRetry connects with automatic retry.
 func (c *Client) ConnectWithRetry(ctx context.Context) error {
 	retries := 0
 	for {
@@ -133,7 +147,7 @@ func (c *Client) ConnectWithRetry(ctx context.Context) error {
 
 		retries++
 		if c.maxRetries > 0 && retries >= c.maxRetries {
-			return errors.New("max connection retries exceeded")
+			return ErrMaxRetriesExceeded
 		}
 
 		c.logger.Warn().
@@ -147,7 +161,7 @@ func (c *Client) ConnectWithRetry(ctx context.Context) error {
 			return ctx.Err()
 		case <-time.After(c.reconnectWait):
 			// Exponential backoff (up to 60s)
-			c.reconnectWait = c.reconnectWait * 2
+			c.reconnectWait *= 2
 			if c.reconnectWait > 60*time.Second {
 				c.reconnectWait = 60 * time.Second
 			}
@@ -155,35 +169,35 @@ func (c *Client) ConnectWithRetry(ctx context.Context) error {
 	}
 }
 
-// Send sends a message to the WebSocket
+// Send sends a message to the WebSocket.
 func (c *Client) Send(data []byte) error {
 	if !c.IsConnected() {
-		return errors.New("not connected")
+		return ErrNotConnected
 	}
 
 	select {
 	case c.send <- data:
 		return nil
 	case <-time.After(c.writeWait):
-		return errors.New("send timeout")
+		return ErrSendTimeout
 	}
 }
 
-// SendJSON sends a JSON message
-// Note: Uses full mutex lock to prevent concurrent writes to the WebSocket connection
+// SendJSON sends a JSON message.
+// Note: Uses full mutex lock to prevent concurrent writes to the WebSocket connection.
 func (c *Client) SendJSON(v interface{}) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
 	if c.conn == nil {
-		return errors.New("not connected")
+		return ErrNotConnected
 	}
 
-	c.conn.SetWriteDeadline(time.Now().Add(c.writeWait))
+	_ = c.conn.SetWriteDeadline(time.Now().Add(c.writeWait))
 	return c.conn.WriteJSON(v)
 }
 
-// Close closes the WebSocket connection
+// Close closes the WebSocket connection.
 func (c *Client) Close() error {
 	// Prevent double-close
 	c.closeMu.Lock()
@@ -202,7 +216,7 @@ func (c *Client) Close() error {
 
 	if c.conn != nil {
 		err := c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-		c.conn.Close()
+		_ = c.conn.Close()
 		c.conn = nil
 		return err
 	}
@@ -210,7 +224,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// IsConnected returns the connection status
+// IsConnected returns the connection status.
 func (c *Client) IsConnected() bool {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
@@ -223,7 +237,7 @@ func (c *Client) setConnected(connected bool) {
 	c.connected = connected
 }
 
-// readPump reads messages from the WebSocket
+// readPump reads messages from the WebSocket.
 func (c *Client) readPump() {
 	defer func() {
 		c.reconnect()
@@ -237,9 +251,9 @@ func (c *Client) readPump() {
 		return
 	}
 
-	conn.SetReadDeadline(time.Now().Add(c.pongWait))
+	_ = conn.SetReadDeadline(time.Now().Add(c.pongWait))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(c.pongWait))
+		_ = conn.SetReadDeadline(time.Now().Add(c.pongWait))
 		return nil
 	})
 
@@ -264,7 +278,7 @@ func (c *Client) readPump() {
 	}
 }
 
-// writePump writes messages to the WebSocket
+// writePump writes messages to the WebSocket.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(c.pingInterval)
 	defer ticker.Stop()
@@ -282,7 +296,7 @@ func (c *Client) writePump() {
 				continue
 			}
 
-			conn.SetWriteDeadline(time.Now().Add(c.writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(c.writeWait))
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				c.logger.Error().Err(err).Msg("WebSocket write error")
 				return
@@ -291,7 +305,7 @@ func (c *Client) writePump() {
 	}
 }
 
-// pingPump sends periodic ping messages
+// pingPump sends periodic ping messages.
 func (c *Client) pingPump() {
 	ticker := time.NewTicker(c.pingInterval)
 	defer ticker.Stop()
@@ -309,10 +323,10 @@ func (c *Client) pingPump() {
 				continue
 			}
 
-			conn.SetWriteDeadline(time.Now().Add(c.writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(c.writeWait))
 			err := conn.WriteMessage(websocket.PingMessage, nil)
 			c.connMu.Unlock()
-			
+
 			if err != nil {
 				c.logger.Warn().Err(err).Msg("WebSocket ping failed")
 				return
@@ -321,7 +335,7 @@ func (c *Client) pingPump() {
 	}
 }
 
-// reconnect attempts to reconnect after disconnection
+// reconnect attempts to reconnect after disconnection.
 func (c *Client) reconnect() {
 	// Check if we're shutting down
 	select {
@@ -334,14 +348,13 @@ func (c *Client) reconnect() {
 	c.setConnected(false)
 
 	if c.onDisconnect != nil {
-		c.onDisconnect(errors.New("connection lost"))
+		c.onDisconnect(ErrConnectionLost)
 	}
 
 	c.logger.Warn().Msg("WebSocket disconnected, attempting to reconnect...")
 
-	// Attempt reconnection
-	ctx := context.Background()
-	if err := c.ConnectWithRetry(ctx); err != nil {
+	// Attempt reconnection using stored context
+	if err := c.ConnectWithRetry(c.ctx); err != nil {
 		c.logger.Error().Err(err).Msg("WebSocket reconnection failed")
 	}
 }

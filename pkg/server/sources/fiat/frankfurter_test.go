@@ -62,8 +62,8 @@ func TestFrankfurterSource_FetchPrices(t *testing.T) {
 
 	// Start source
 	ctx := context.Background()
-	go source.Start(ctx)
-	defer source.Stop()
+	go func() { _ = source.Start(ctx) }()
+	defer func() { _ = source.Stop() }()
 
 	// Give it plenty of time for the initial fetch and any retries
 	time.Sleep(5 * time.Second)
@@ -131,8 +131,8 @@ func TestFrankfurterSource_Subscribe(t *testing.T) {
 	}
 
 	// Start source
-	go source.Start(context.Background())
-	defer source.Stop()
+	go func() { _ = source.Start(context.Background()) }()
+	defer func() { _ = source.Stop() }()
 
 	// Wait for update
 	select {

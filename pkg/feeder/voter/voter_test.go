@@ -12,7 +12,11 @@ import (
 	"tc.com/oracle-prices/pkg/feeder/price"
 )
 
-// MockPriceClient mocks the price client interface
+const (
+	ustDenom = "UST"
+)
+
+// MockPriceClient mocks the price client interface.
 type MockPriceClient struct {
 	mock.Mock
 }
@@ -240,7 +244,7 @@ func TestFetchPricesError(t *testing.T) {
 	mockPriceClient.AssertExpectations(t)
 }
 
-// TestVotingStateTransitions tests the state machine transitions
+// TestVotingStateTransitions tests the state machine transitions.
 func TestVotingStateTransitions(t *testing.T) {
 	v := &Voter{
 		state: StateIdle,
@@ -254,7 +258,7 @@ func TestVotingStateTransitions(t *testing.T) {
 	assert.Equal(t, uint64(100), v.GetLastVotePeriod())
 }
 
-// TestWhitelistFiltering verifies that only whitelisted denoms are included
+// TestWhitelistFiltering verifies that only whitelisted denoms are included.
 func TestWhitelistFiltering(t *testing.T) {
 	v := &Voter{}
 
@@ -293,7 +297,7 @@ func TestWhitelistFiltering(t *testing.T) {
 	assert.False(t, denoms["ueth"], "ueth should NOT be present (not whitelisted)")
 }
 
-// TestCaseInsensitiveSymbolMapping verifies symbol mapping handles different cases
+// TestCaseInsensitiveSymbolMapping verifies symbol mapping handles different cases.
 func TestCaseInsensitiveSymbolMapping(t *testing.T) {
 	tests := []struct {
 		symbol   string
@@ -316,7 +320,7 @@ func TestCaseInsensitiveSymbolMapping(t *testing.T) {
 	}
 }
 
-// TestMetaDenomHandling tests special handling of UST meta-denom
+// TestMetaDenomHandling tests special handling of UST meta-denom.
 func TestMetaDenomHandling(t *testing.T) {
 	v := &Voter{}
 
@@ -333,7 +337,7 @@ func TestMetaDenomHandling(t *testing.T) {
 	// Find UST and verify it doesn't have 'u' prefix
 	var ustFound bool
 	for _, p := range result {
-		if p.Denom == "UST" {
+		if p.Denom == ustDenom {
 			ustFound = true
 			// UST should NOT start with 'u'
 			assert.NotEqual(t, "uUST", p.Denom)
@@ -345,7 +349,7 @@ func TestMetaDenomHandling(t *testing.T) {
 	assert.True(t, ustFound, "UST meta-denom should be present")
 }
 
-// TestPriceConversion verifies decimal to float64 conversion is correct
+// TestPriceConversion verifies decimal to float64 conversion is correct.
 func TestPriceConversion(t *testing.T) {
 	v := &Voter{}
 
@@ -395,7 +399,7 @@ func TestPriceConversion(t *testing.T) {
 	}
 }
 
-// TestEmptyInputs verifies behavior with empty inputs
+// TestEmptyInputs verifies behavior with empty inputs.
 func TestEmptyInputs(t *testing.T) {
 	v := &Voter{}
 
@@ -426,7 +430,7 @@ func TestEmptyInputs(t *testing.T) {
 	})
 }
 
-// TestSymbolSuffixVariations tests different symbol suffix formats
+// TestSymbolSuffixVariations tests different symbol suffix formats.
 func TestSymbolSuffixVariations(t *testing.T) {
 	tests := []struct {
 		name     string

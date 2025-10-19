@@ -1,17 +1,26 @@
+// Package config provides configuration loading and validation for oracle-go.
 package config
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Load loads configuration from YAML file and environment variables
+// Load loads configuration from YAML file and environment variables.
 func Load(path string) (*Config, error) {
+	// Validate and sanitize path
+	cleanPath := filepath.Clean(path)
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config path: %w", err)
+	}
+
 	// Read config file
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(absPath) // #nosec G304 -- Path sanitized with filepath.Clean and filepath.Abs
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -31,11 +40,11 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// applyDefaults sets default values for optional fields
+// applyDefaults sets default values for optional fields.
 func applyDefaults(cfg *Config) {
 	// Default mode
 	if cfg.Mode == "" {
-		cfg.Mode = "both"
+		cfg.Mode = ModeBoth
 	}
 
 	// Server defaults
@@ -90,7 +99,7 @@ func applyDefaults(cfg *Config) {
 	}
 }
 
-// GetSourceConfig retrieves source-specific configuration value
+// GetString retrieves a string value from the source configuration.
 func (sc *SourceConfig) GetString(key string, defaultValue string) string {
 	if val, ok := sc.Config[key]; ok {
 		if str, ok := val.(string); ok {
@@ -100,7 +109,7 @@ func (sc *SourceConfig) GetString(key string, defaultValue string) string {
 	return defaultValue
 }
 
-// GetStringSlice retrieves a string slice from source config
+// GetStringSlice retrieves a string slice from source config.
 func (sc *SourceConfig) GetStringSlice(key string) []string {
 	if val, ok := sc.Config[key]; ok {
 		if slice, ok := val.([]interface{}); ok {
@@ -116,7 +125,7 @@ func (sc *SourceConfig) GetStringSlice(key string) []string {
 	return nil
 }
 
-// GetInt retrieves an integer from source config
+// GetInt retrieves an integer from source config.
 func (sc *SourceConfig) GetInt(key string, defaultValue int) int {
 	if val, ok := sc.Config[key]; ok {
 		if i, ok := val.(int); ok {
@@ -126,7 +135,7 @@ func (sc *SourceConfig) GetInt(key string, defaultValue int) int {
 	return defaultValue
 }
 
-// GetBool retrieves a boolean from source config
+// GetBool retrieves a boolean from source config.
 func (sc *SourceConfig) GetBool(key string, defaultValue bool) bool {
 	if val, ok := sc.Config[key]; ok {
 		if b, ok := val.(bool); ok {
@@ -136,18 +145,18 @@ func (sc *SourceConfig) GetBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-// NormalizeMode converts mode string to lowercase
+// NormalizeMode converts mode string to lowercase.
 func (c *Config) NormalizeMode() string {
 	return strings.ToLower(c.Mode)
 }
 
-// IsServerMode returns true if server should run
+// IsServerMode returns true if server should run.
 func (c *Config) IsServerMode() bool {
 	mode := c.NormalizeMode()
 	return mode == "both" || mode == "server"
 }
 
-// IsFeederMode returns true if feeder should run
+// IsFeederMode returns true if feeder should run.
 func (c *Config) IsFeederMode() bool {
 	mode := c.NormalizeMode()
 	return mode == "both" || mode == "feeder"

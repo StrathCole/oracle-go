@@ -1,3 +1,4 @@
+// Package eventstream provides event stream handling for the oracle feeder.
 package eventstream
 
 import (
@@ -11,11 +12,11 @@ import (
 )
 
 const (
-	// paramsUpdateInterval is how often to poll oracle params
+	// paramsUpdateInterval is how often to poll oracle params.
 	paramsUpdateInterval = 10 * time.Second
 )
 
-// Stream implements EventStream using WebSocket subscription to Tendermint RPC
+// Stream implements EventStream using WebSocket subscription to Tendermint RPC.
 type Stream struct {
 	logger        zerolog.Logger
 	websocket     *Websocket
@@ -24,23 +25,23 @@ type Stream struct {
 	paramsCh      chan Params
 	closeCh       chan struct{}
 	currentParams *Params
-	
+
 	// Failover support
-	rpcEndpoints  []string
-	currentRPC    int
+	rpcEndpoints []string
+	currentRPC   int
 }
 
-// NewStream creates a new event stream with failover support
+// NewStream creates a new event stream with failover support.
 func NewStream(tendermintRPC string, client *client.Client, logger zerolog.Logger) (*Stream, error) {
 	return NewStreamWithFailover([]string{tendermintRPC}, client, logger)
 }
 
-// NewStreamWithFailover creates a new event stream with multiple RPC endpoints for failover
+// NewStreamWithFailover creates a new event stream with multiple RPC endpoints for failover.
 func NewStreamWithFailover(rpcEndpoints []string, client *client.Client, logger zerolog.Logger) (*Stream, error) {
 	if len(rpcEndpoints) == 0 {
-		return nil, fmt.Errorf("at least one RPC endpoint required")
+		return nil, fmt.Errorf("%w", ErrNoRPCEndpointRequired)
 	}
-	
+
 	// Create subscription message for NewBlock events
 	subscribeMsg := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -64,18 +65,18 @@ func NewStreamWithFailover(rpcEndpoints []string, client *client.Client, logger 
 		rpcEndpoints: rpcEndpoints,
 		currentRPC:   0,
 	}
-	
+
 	if len(rpcEndpoints) > 1 {
 		stream.logger.Info().
 			Int("endpoints", len(rpcEndpoints)).
 			Str("primary", primaryRPC).
 			Msg("Event stream initialized with failover support")
 	}
-	
+
 	return stream, nil
 }
 
-// Start begins the event stream loops
+// Start begins the event stream loops.
 func (s *Stream) Start(ctx context.Context) error {
 	s.logger.Info().Msg("starting event stream")
 
@@ -91,7 +92,7 @@ func (s *Stream) Start(ctx context.Context) error {
 	return nil
 }
 
-// votingPeriodLoop listens to NewBlock events and detects voting period starts
+// votingPeriodLoop listens to NewBlock events and detects voting period starts.
 func (s *Stream) votingPeriodLoop(ctx context.Context) {
 	s.logger.Info().Msg("starting voting period loop")
 
@@ -141,7 +142,7 @@ func (s *Stream) votingPeriodLoop(ctx context.Context) {
 	}
 }
 
-// paramsLoop periodically polls oracle params and sends updates
+// paramsLoop periodically polls oracle params and sends updates.
 func (s *Stream) paramsLoop(ctx context.Context) {
 	s.logger.Info().Msg("starting params loop")
 
@@ -169,7 +170,7 @@ func (s *Stream) paramsLoop(ctx context.Context) {
 	}
 }
 
-// updateParams fetches oracle params and sends update if changed
+// updateParams fetches oracle params and sends update if changed.
 func (s *Stream) updateParams(ctx context.Context) error {
 	params, err := s.client.GetOracleParams(ctx)
 	if err != nil {
@@ -214,7 +215,7 @@ func (s *Stream) updateParams(ctx context.Context) error {
 	return nil
 }
 
-// parseBlockHeight extracts block height from Tendermint NewBlock event JSON
+// parseBlockHeight extracts block height from Tendermint NewBlock event JSON.
 func (s *Stream) parseBlockHeight(msg []byte) (uint64, error) {
 	var event struct {
 		Result struct {
@@ -243,24 +244,24 @@ func (s *Stream) parseBlockHeight(msg []byte) (uint64, error) {
 	return height, nil
 }
 
-// VotingPeriodStarted returns a channel that signals when a new voting period begins
+// VotingPeriodStarted returns a channel that signals when a new voting period begins.
 func (s *Stream) VotingPeriodStarted() <-chan VotingPeriod {
 	return s.votePeriodCh
 }
 
-// ParamsUpdate returns a channel that signals when oracle params are updated
+// ParamsUpdate returns a channel that signals when oracle params are updated.
 func (s *Stream) ParamsUpdate() <-chan Params {
 	return s.paramsCh
 }
 
-// Close shuts down the event stream
+// Close shuts down the event stream.
 func (s *Stream) Close() {
 	s.logger.Info().Msg("closing event stream")
 	close(s.closeCh)
 	s.websocket.Close()
 }
 
-// stringSlicesEqual compares two string slices for equality
+// stringSlicesEqual compares two string slices for equality.
 func stringSlicesEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

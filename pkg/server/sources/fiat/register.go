@@ -1,3 +1,4 @@
+// Package fiat provides fiat currency and SDR price sources.
 package fiat
 
 import (

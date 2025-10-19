@@ -19,14 +19,14 @@ const (
 	bybitPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// BybitSource fetches prices from Bybit REST API
+// BybitSource fetches prices from Bybit REST API.
 type BybitSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// BybitResponse represents the API response
+// BybitResponse represents the API response.
 type BybitResponse struct {
 	RetCode int    `json:"retCode"`
 	RetMsg  string `json:"retMsg"`
@@ -40,7 +40,7 @@ type BybitResponse struct {
 	} `json:"result"`
 }
 
-// NewBybitSource creates a new Bybit REST source
+// NewBybitSource creates a new Bybit REST source.
 func NewBybitSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -64,13 +64,13 @@ func NewBybitSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *BybitSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *BybitSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Bybit source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *BybitSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Bybit source")
 
@@ -85,28 +85,28 @@ func (s *BybitSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *BybitSource) Stop() error {
 	s.Logger().Info("Bybit source stopped")
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *BybitSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *BybitSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *BybitSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *BybitSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(bybitPollRate)
 	defer ticker.Stop()
@@ -132,7 +132,7 @@ func (s *BybitSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from Bybit API
+// fetchPrices fetches current prices from Bybit API.
 func (s *BybitSource) fetchPrices(ctx context.Context) error {
 	// Make request (category=spot returns all spot pairs)
 	url := s.apiURL + "?category=spot"
@@ -145,16 +145,16 @@ func (s *BybitSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -168,7 +168,7 @@ func (s *BybitSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if response.RetCode != 0 {
-		return fmt.Errorf("API error: %s", response.RetMsg)
+		return fmt.Errorf("%w: %s", sources.ErrAPIError, response.RetMsg)
 	}
 
 	now := time.Now()
@@ -205,10 +205,4 @@ func (s *BybitSource) fetchPrices(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func init() {
-	sources.Register("cex.bybit", func(config map[string]interface{}) (sources.Source, error) {
-		return NewBybitSource(config)
-	})
 }

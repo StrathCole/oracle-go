@@ -17,14 +17,14 @@ const (
 	kucoinPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// KucoinSource fetches prices from Kucoin REST API
+// KucoinSource fetches prices from Kucoin REST API.
 type KucoinSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// KucoinTicker represents a single ticker in the response
+// KucoinTicker represents a single ticker in the response.
 type KucoinTicker struct {
 	Symbol      string `json:"symbol"`      // e.g., "BTC-USDT"
 	Buy         string `json:"buy"`         // Best bid price
@@ -38,7 +38,7 @@ type KucoinTicker struct {
 	ChangeRate  string `json:"changeRate"`  // 24h change rate
 }
 
-// KucoinResponse represents the API response
+// KucoinResponse represents the API response.
 type KucoinResponse struct {
 	Code string `json:"code"` // "200000" for success
 	Data struct {
@@ -47,7 +47,7 @@ type KucoinResponse struct {
 	} `json:"data"`
 }
 
-// NewKucoinSource creates a new Kucoin REST source
+// NewKucoinSource creates a new Kucoin REST source.
 func NewKucoinSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -71,13 +71,13 @@ func NewKucoinSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *KucoinSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *KucoinSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Kucoin source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *KucoinSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Kucoin source")
 
@@ -92,29 +92,29 @@ func (s *KucoinSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *KucoinSource) Stop() error {
 	s.Logger().Info("Kucoin source stopped")
 	s.Close()
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *KucoinSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *KucoinSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *KucoinSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *KucoinSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(kucoinPollRate)
 	defer ticker.Stop()
@@ -140,7 +140,7 @@ func (s *KucoinSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from Kucoin API
+// fetchPrices fetches current prices from Kucoin API.
 func (s *KucoinSource) fetchPrices(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", s.apiURL, nil)
 	if err != nil {
@@ -151,15 +151,17 @@ func (s *KucoinSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -173,11 +175,11 @@ func (s *KucoinSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if response.Code != "200000" {
-		return fmt.Errorf("API error code: %s", response.Code)
+		return fmt.Errorf("%w: %s", sources.ErrAPIError, response.Code)
 	}
 
 	if len(response.Data.Ticker) == 0 {
-		return fmt.Errorf("no tickers in response")
+		return fmt.Errorf("%w", sources.ErrNoTickersInResponse)
 	}
 
 	now := time.Now()
@@ -193,7 +195,7 @@ func (s *KucoinSource) fetchPrices(ctx context.Context) error {
 				break
 			}
 		}
-		
+
 		if unifiedSymbol == "" {
 			// Not a symbol we're tracking
 			continue
@@ -228,7 +230,7 @@ func (s *KucoinSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updateCount == 0 {
-		return fmt.Errorf("no matching symbols found in response")
+		return fmt.Errorf("%w", sources.ErrNoMatchingSymbols)
 	}
 
 	s.SetLastUpdate(now)

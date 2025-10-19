@@ -1,8 +1,10 @@
+// Package api provides HTTP and WebSocket API endpoints for the price server.
 package api
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -13,7 +15,7 @@ import (
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
-// Server represents the HTTP API server
+// Server represents the HTTP API server.
 type Server struct {
 	addr          string
 	sources       []sources.Source
@@ -27,7 +29,7 @@ type Server struct {
 	wsServer      *WebSocketServer // Optional WebSocket server for streaming
 }
 
-// NewServer creates a new HTTP API server
+// NewServer creates a new HTTP API server.
 func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggregator, weights map[string]float64, cacheTTL time.Duration, logger *logging.Logger) *Server {
 	return &Server{
 		addr:          addr,
@@ -40,12 +42,12 @@ func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggreg
 	}
 }
 
-// SetWebSocketServer sets the WebSocket server for streaming updates
+// SetWebSocketServer sets the WebSocket server for streaming updates.
 func (s *Server) SetWebSocketServer(ws *WebSocketServer) {
 	s.wsServer = ws
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server.
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
@@ -53,18 +55,22 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/latest", s.handlePrices) // Compatibility with TypeScript feeder
 
 	s.server = &http.Server{
-		Addr:    s.addr,
-		Handler: mux,
+		Addr:              s.addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	s.logger.Info("Starting HTTP server", "addr", s.addr)
-	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("HTTP server error: %w", err)
 	}
 	return nil
 }
 
-// Stop gracefully stops the HTTP server
+// Stop gracefully stops the HTTP server.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.server != nil {
 		s.logger.Info("Stopping HTTP server")
@@ -73,18 +79,18 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// handleHealth handles /health endpoint
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+// handleHealth handles /health endpoint.
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	start := time.Now()
 	defer func() {
 		metrics.RecordHTTPRequest("/health", "200", time.Since(start))
 	}()
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	_, _ = w.Write([]byte("OK"))
 }
 
-// handlePrices handles /v1/prices and /latest endpoints
+// handlePrices handles /v1/prices and /latest endpoints.
 func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	status := "200"
@@ -145,7 +151,7 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	s.sendJSON(w, s.convertToArray(aggregatedPrices))
 }
 
-// convertToArray converts price map to array format
+// convertToArray converts price map to array format.
 func (s *Server) convertToArray(prices map[string]sources.Price) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(prices))
 	for _, price := range prices {
@@ -157,7 +163,7 @@ func (s *Server) convertToArray(prices map[string]sources.Price) []map[string]in
 	return result
 }
 
-// sendJSON sends a JSON response
+// sendJSON sends a JSON response.
 func (s *Server) sendJSON(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(data); err != nil {

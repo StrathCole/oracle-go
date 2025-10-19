@@ -20,7 +20,7 @@ const (
 	coingeckoProMinInterval  = 2 * time.Second  // Pro API: ~30 calls/minute
 )
 
-// CoinGeckoSource fetches prices from CoinGecko REST API
+// CoinGeckoSource fetches prices from CoinGecko REST API.
 type CoinGeckoSource struct {
 	*sources.BaseSource
 
@@ -31,7 +31,7 @@ type CoinGeckoSource struct {
 	client         *http.Client
 }
 
-// NewCoinGeckoSource creates a new CoinGecko source
+// NewCoinGeckoSource creates a new CoinGecko source.
 func NewCoinGeckoSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -85,13 +85,13 @@ func NewCoinGeckoSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *CoinGeckoSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *CoinGeckoSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing CoinGecko source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *CoinGeckoSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting CoinGecko source")
 
@@ -106,29 +106,29 @@ func (s *CoinGeckoSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop halts the source and cleans up resources
+// Stop halts the source and cleans up resources.
 func (s *CoinGeckoSource) Stop() error {
 	s.Logger().Info("Stopping CoinGecko source")
 	// StopChan is closed by BaseSource, we just log
 	return nil
 }
 
-// GetPrices returns the current prices for all symbols
-func (s *CoinGeckoSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices for all symbols.
+func (s *CoinGeckoSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe allows other components to receive price updates
+// Subscribe allows other components to receive price updates.
 func (s *CoinGeckoSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// updateLoop periodically fetches prices
+// updateLoop periodically fetches prices.
 func (s *CoinGeckoSource) updateLoop(ctx context.Context) {
 	ticker := time.NewTicker(s.updateInterval)
 	defer ticker.Stop()
@@ -154,7 +154,7 @@ func (s *CoinGeckoSource) updateLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches prices from CoinGecko API
+// fetchPrices fetches prices from CoinGecko API.
 func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	// Rate limiting: enforce minimum interval between requests
 	now := time.Now()
@@ -186,7 +186,7 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(idSet) == 0 {
-		return fmt.Errorf("no valid symbols to fetch")
+		return fmt.Errorf("%w", sources.ErrNoValidSymbols)
 	}
 
 	ids := make([]string, 0, len(idSet))
@@ -217,7 +217,7 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Handle rate limit response (429 Too Many Requests)
 	if resp.StatusCode == http.StatusTooManyRequests {
@@ -225,11 +225,11 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 			"status", resp.StatusCode,
 			"has_api_key", s.apiKey != "",
 			"min_interval", s.minInterval)
-		return fmt.Errorf("rate limit exceeded (status 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	// Parse response
@@ -269,7 +269,7 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updateCount == 0 {
-		return fmt.Errorf("no prices extracted from response (got %d items from API, %d symbol mappings)", len(data), len(idToSymbol))
+		return fmt.Errorf("%w (API: %d items, mappings: %d)", sources.ErrNoPricesExtracted, len(data), len(idToSymbol))
 	}
 
 	s.SetHealthy(true)
@@ -277,11 +277,4 @@ func (s *CoinGeckoSource) fetchPrices(ctx context.Context) error {
 	s.Logger().Debug("Fetched prices from CoinGecko", "count", updateCount)
 
 	return nil
-}
-
-// Register the source in init
-func init() {
-	sources.Register("cex.coingecko", func(config map[string]interface{}) (sources.Source, error) {
-		return NewCoinGeckoSource(config)
-	})
 }

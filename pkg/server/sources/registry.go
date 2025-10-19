@@ -1,3 +1,4 @@
+// Package sources provides price source interfaces and implementations.
 package sources
 
 import (
@@ -10,14 +11,14 @@ var (
 	mu       sync.RWMutex
 )
 
-// Register adds a source factory to the registry
+// Register adds a source factory to the registry.
 func Register(name string, factory SourceFactory) {
 	mu.Lock()
 	defer mu.Unlock()
 	registry[name] = factory
 }
 
-// Create creates a new source instance by name
+// Create creates a new source instance by name.
 func Create(sourceType, name string, config map[string]interface{}) (Source, error) {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -25,13 +26,13 @@ func Create(sourceType, name string, config map[string]interface{}) (Source, err
 	key := fmt.Sprintf("%s.%s", sourceType, name)
 	factory, ok := registry[key]
 	if !ok {
-		return nil, fmt.Errorf("unknown source: %s", key)
+		return nil, fmt.Errorf("%w: %s", ErrInvalidConfig, key)
 	}
 
 	return factory(config)
 }
 
-// List returns all registered source names
+// List returns all registered source names.
 func List() []string {
 	mu.RLock()
 	defer mu.RUnlock()

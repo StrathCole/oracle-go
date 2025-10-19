@@ -19,14 +19,14 @@ const (
 	krakenPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// KrakenSource fetches prices from Kraken REST API
+// KrakenSource fetches prices from Kraken REST API.
 type KrakenSource struct {
 	*sources.BaseSource
 
 	apiURL string
 }
 
-// KrakenTickerData represents ticker data for a single pair
+// KrakenTickerData represents ticker data for a single pair.
 type KrakenTickerData struct {
 	A []string `json:"a"` // Ask [price, whole lot volume, lot volume]
 	B []string `json:"b"` // Bid [price, whole lot volume, lot volume]
@@ -39,13 +39,13 @@ type KrakenTickerData struct {
 	O string   `json:"o"` // Today's opening price
 }
 
-// KrakenResponse represents the API response
+// KrakenResponse represents the API response.
 type KrakenResponse struct {
 	Error  []string                    `json:"error"`
 	Result map[string]KrakenTickerData `json:"result"`
 }
 
-// NewKrakenSource creates a new Kraken REST source
+// NewKrakenSource creates a new Kraken REST source.
 func NewKrakenSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -70,13 +70,13 @@ func NewKrakenSource(config map[string]interface{}) (sources.Source, error) {
 	}, nil
 }
 
-// Initialize prepares the source for operation
-func (s *KrakenSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *KrakenSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Kraken source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *KrakenSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Kraken source")
 
@@ -91,29 +91,29 @@ func (s *KrakenSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *KrakenSource) Stop() error {
 	s.Logger().Info("Kraken source stopped")
 	s.Close()
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *KrakenSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *KrakenSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *KrakenSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *KrakenSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(krakenPollRate)
 	defer ticker.Stop()
@@ -144,25 +144,26 @@ func (s *KrakenSource) pollLoop(ctx context.Context) {
 //   - XXBTZUSD (prefixed format for BTC/USD)
 //   - ADAUSD (simple format for some pairs)
 //   - XETHZEUR (mixed format)
-// We try multiple matching strategies to handle all cases
+//
+// We try multiple matching strategies to handle all cases.
 func matchKrakenSymbol(responseKey string, pairMappings map[string]string) string {
 	// Strategy 1: Exact match (response key is in our config)
 	if unified, ok := pairMappings[responseKey]; ok {
 		return unified
 	}
-	
+
 	// Strategy 2: Try all configured Kraken symbols and see if they're contained in the response key
 	// This handles cases like: we send "BTCUSD", Kraken returns "XXBTZUSD"
 	for unified, krakenSymbol := range pairMappings {
 		// Remove common formatting from both for comparison
 		cleanKraken := strings.ReplaceAll(strings.ReplaceAll(krakenSymbol, "/", ""), "-", "")
 		cleanResponse := strings.ReplaceAll(strings.ReplaceAll(responseKey, "/", ""), "-", "")
-		
+
 		// Check if they match after removing formatting
 		if cleanKraken == cleanResponse {
 			return unified
 		}
-		
+
 		// Handle Kraken's prefix additions: BTCUSD -> XXBTZUSD
 		// Try with common BTC aliases
 		if strings.Contains(cleanResponse, "XBT") {
@@ -172,12 +173,12 @@ func matchKrakenSymbol(responseKey string, pairMappings map[string]string) strin
 			}
 		}
 	}
-	
+
 	// No match found
 	return ""
 }
 
-// fetchPrices fetches current prices from Kraken API
+// fetchPrices fetches current prices from Kraken API.
 func (s *KrakenSource) fetchPrices(ctx context.Context) error {
 	// Build request with pair list
 	pairs := s.GetAllPairs()
@@ -187,7 +188,7 @@ func (s *KrakenSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(krakenSymbols) == 0 {
-		return fmt.Errorf("no symbols configured")
+		return fmt.Errorf("%w", sources.ErrNoSymbolsConfigured)
 	}
 
 	// Kraken wants comma-separated pairs
@@ -203,15 +204,15 @@ func (s *KrakenSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -225,11 +226,11 @@ func (s *KrakenSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(response.Error) > 0 {
-		return fmt.Errorf("API errors: %v", response.Error)
+		return fmt.Errorf("%w: %v", sources.ErrAPIError, response.Error)
 	}
 
 	if len(response.Result) == 0 {
-		return fmt.Errorf("no tickers in response")
+		return fmt.Errorf("%w", sources.ErrNoTickersInResponse)
 	}
 
 	now := time.Now()
@@ -250,7 +251,7 @@ func (s *KrakenSource) fetchPrices(ctx context.Context) error {
 	for krakenSymbol, ticker := range response.Result {
 		// Try to match the Kraken response key to our configured symbols
 		unifiedSymbol := matchKrakenSymbol(krakenSymbol, pairMappings)
-		
+
 		if unifiedSymbol == "" {
 			// Not a symbol we're tracking
 			s.Logger().Debug("Unmatched Kraken symbol", "symbol", krakenSymbol)
@@ -286,7 +287,7 @@ func (s *KrakenSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updateCount == 0 {
-		return fmt.Errorf("no matching symbols found in response")
+		return fmt.Errorf("%w", sources.ErrNoMatchingSymbols)
 	}
 
 	s.SetLastUpdate(now)

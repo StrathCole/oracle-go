@@ -20,7 +20,7 @@ const (
 	mexcPollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// MEXCSource fetches prices from MEXC (supports both REST and WebSocket)
+// MEXCSource fetches prices from MEXC (supports both REST and WebSocket).
 type MEXCSource struct {
 	*sources.BaseSource
 
@@ -34,26 +34,26 @@ type MEXCSource struct {
 	wsRetryBackoff time.Duration // Current exponential backoff duration
 }
 
-// MEXCPriceTicker represents lightweight price data from /ticker/price endpoint
+// MEXCPriceTicker represents lightweight price data from /ticker/price endpoint.
 type MEXCPriceTicker struct {
 	Symbol string `json:"symbol"` // e.g., "LUNCUSDT"
 	Price  string `json:"price"`  // Current price
 }
 
-// MEXCWSMessage represents WebSocket message from MEXC deals (trades) stream
+// MEXCWSMessage represents WebSocket message from MEXC deals (trades) stream.
 type MEXCWSMessage struct {
-	Channel   string          `json:"c"`  // Channel name (short form)
-	Data      *MEXCDealsData  `json:"d"`  // Deals data
-	Symbol    string          `json:"s"`  // Trading pair
-	Timestamp int64           `json:"t"`  // Event time
+	Channel   string         `json:"c"` // Channel name (short form)
+	Data      *MEXCDealsData `json:"d"` // Deals data
+	Symbol    string         `json:"s"` // Trading pair
+	Timestamp int64          `json:"t"` // Event time
 }
 
-// MEXCDealsData represents trade/deal data from spot@public.deals stream
+// MEXCDealsData represents trade/deal data from spot@public.deals stream.
 type MEXCDealsData struct {
 	Deals []MEXCDeal `json:"deals"` // Array of recent trades
 }
 
-// MEXCDeal represents a single trade
+// MEXCDeal represents a single trade.
 type MEXCDeal struct {
 	Price     string `json:"p"` // Trade price
 	Volume    string `json:"v"` // Trade volume
@@ -62,7 +62,7 @@ type MEXCDeal struct {
 	TradeID   string `json:"i"` // Trade ID
 }
 
-// NewMEXCSource creates a new MEXC source (REST or WebSocket based on config)
+// NewMEXCSource creates a new MEXC source (REST or WebSocket based on config).
 func NewMEXCSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -119,7 +119,7 @@ func NewMEXCSource(config map[string]interface{}) (sources.Source, error) {
 			headers := make(map[string][]string)
 			headers["X-MEXC-APIKEY"] = []string{apiKey}
 			headers["Content-Type"] = []string{"application/json"}
-			
+
 			source.wsClient = ws.NewClient(ws.Config{
 				URL:     wsURL,
 				Logger:  logger.ZerologLogger(),
@@ -139,13 +139,13 @@ func NewMEXCSource(config map[string]interface{}) (sources.Source, error) {
 	return source, nil
 }
 
-// Initialize prepares the source for operation
-func (s *MEXCSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *MEXCSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing MEXC source", "symbols", s.Symbols())
 	return nil
 }
 
-// Start begins fetching prices (REST or WebSocket based on configuration)
+// Start begins fetching prices (REST or WebSocket based on configuration).
 func (s *MEXCSource) Start(ctx context.Context) error {
 	// Do initial REST fetch to have prices immediately
 	s.Logger().Info("Performing initial price fetch")
@@ -166,34 +166,34 @@ func (s *MEXCSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the source
+// Stop stops the source.
 func (s *MEXCSource) Stop() error {
 	s.Logger().Info("MEXC source stopped")
-	
+
 	if s.wsClient != nil {
-		s.wsClient.Close()
+		_ = s.wsClient.Close()
 	}
-	
+
 	s.Close()
 	return nil
 }
 
-// GetPrices returns the current prices
-func (s *MEXCSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *MEXCSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", sources.ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe adds a subscriber
+// Subscribe adds a subscriber.
 func (s *MEXCSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// pollLoop periodically fetches prices
+// pollLoop periodically fetches prices.
 func (s *MEXCSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(mexcPollRate)
 	defer ticker.Stop()
@@ -219,11 +219,11 @@ func (s *MEXCSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices fetches current prices from MEXC API
+// fetchPrices fetches current prices from MEXC API.
 func (s *MEXCSource) fetchPrices(ctx context.Context) error {
 	// MEXC's /ticker/price endpoint returns lightweight price data
 	// Fetch all symbols at once (no query parameters)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", s.apiURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -233,15 +233,17 @@ func (s *MEXCSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w (HTTP 429)", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -255,7 +257,7 @@ func (s *MEXCSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(tickers) == 0 {
-		return fmt.Errorf("no tickers in response")
+		return fmt.Errorf("%w", sources.ErrNoTickersInResponse)
 	}
 
 	now := time.Now()
@@ -301,7 +303,7 @@ func (s *MEXCSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updateCount == 0 {
-		return fmt.Errorf("no matching symbols found in response")
+		return fmt.Errorf("%w", sources.ErrNoMatchingSymbols)
 	}
 
 	s.SetLastUpdate(now)
@@ -310,7 +312,7 @@ func (s *MEXCSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
-// pollLoopWhileBlocked runs a temporary polling loop while WebSocket is blocked
+// pollLoopWhileBlocked runs a temporary polling loop while WebSocket is blocked.
 func (s *MEXCSource) pollLoopWhileBlocked(ctx context.Context) {
 	ticker := time.NewTicker(mexcPollRate)
 	defer ticker.Stop()
@@ -327,10 +329,10 @@ func (s *MEXCSource) pollLoopWhileBlocked(ctx context.Context) {
 			if s.wsBlocked && time.Now().After(s.wsRetryTime) {
 				s.Logger().Info("Retry time reached - attempting to reconnect WebSocket",
 					"backoff", s.wsRetryBackoff)
-				
+
 				// Reset blocked flag and try to reconnect
 				s.wsBlocked = false
-				
+
 				if err := s.startWebSocket(ctx); err != nil {
 					s.Logger().Warn("WebSocket reconnection failed, continuing with REST",
 						"error", err.Error())
@@ -339,11 +341,11 @@ func (s *MEXCSource) pollLoopWhileBlocked(ctx context.Context) {
 					s.wsRetryTime = time.Now().Add(s.wsRetryBackoff)
 					continue
 				}
-				
+
 				s.Logger().Info("WebSocket reconnected successfully - stopping REST polling")
 				return
 			}
-			
+
 			// Continue polling while blocked
 			if err := s.fetchPrices(ctx); err != nil {
 				s.Logger().Warn("MEXC REST fetch failed during blocked period", "error", err.Error())
@@ -354,7 +356,7 @@ func (s *MEXCSource) pollLoopWhileBlocked(ctx context.Context) {
 
 // WebSocket implementation
 
-// startWebSocket starts the WebSocket connection
+// startWebSocket starts the WebSocket connection.
 func (s *MEXCSource) startWebSocket(ctx context.Context) error {
 	if err := s.wsClient.ConnectWithRetry(ctx); err != nil {
 		return fmt.Errorf("failed to connect WebSocket: %w", err)
@@ -369,7 +371,7 @@ func (s *MEXCSource) startWebSocket(ctx context.Context) error {
 	return nil
 }
 
-// sendPings sends application-level PING messages to keep connection alive
+// sendPings sends application-level PING messages to keep connection alive.
 func (s *MEXCSource) sendPings(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -387,7 +389,7 @@ func (s *MEXCSource) sendPings(ctx context.Context) {
 			if s.wsBlocked || s.wsClient == nil {
 				continue
 			}
-			
+
 			ping := map[string]interface{}{
 				"method": "PING",
 			}
@@ -400,7 +402,7 @@ func (s *MEXCSource) sendPings(ctx context.Context) {
 	}
 }
 
-// subscribeToTickers subscribes to ticker updates for configured pairs
+// subscribeToTickers subscribes to ticker updates for configured pairs.
 func (s *MEXCSource) subscribeToTickers() {
 	// MEXC WebSocket subscription format for deals (trades):
 	// {"method":"SUBSCRIPTION","params":["spot@public.deals.v3.api@SYMBOL"]}
@@ -412,18 +414,22 @@ func (s *MEXCSource) subscribeToTickers() {
 	// - Requires PING every 30s to keep alive
 	// - Server disconnects after 30s without valid subscription
 	// - Server disconnects after 1 minute without data flow
-	
+
 	pairMappings := s.GetAllPairs()
-	
+
 	// Check subscription limit (MEXC supports max 30 subscriptions per connection)
 	if len(pairMappings) > 30 {
 		s.Logger().Warn("MEXC supports max 30 subscriptions per connection",
 			"configured", len(pairMappings),
 			"using_first", 30)
 	}
-	
+
 	// Build array of all streams to subscribe to (max 30)
-	var streams []string
+	streamCount := len(pairMappings)
+	if streamCount > 30 {
+		streamCount = 30
+	}
+	streams := make([]string, 0, streamCount)
 	count := 0
 	for _, mexcSymbol := range pairMappings {
 		if count >= 30 {
@@ -434,29 +440,29 @@ func (s *MEXCSource) subscribeToTickers() {
 		streams = append(streams, stream)
 		count++
 	}
-	
+
 	// Send single subscription message with all streams
 	subscription := map[string]interface{}{
 		"method": "SUBSCRIPTION",
 		"params": streams,
 	}
-	
+
 	if err := s.wsClient.SendJSON(subscription); err != nil {
 		s.Logger().Error("Failed to subscribe to K-line streams", "error", err, "streams", streams)
 		return
 	}
-	
+
 	s.Logger().Info("Subscribed to MEXC WebSocket K-line streams", "count", len(streams), "streams", streams)
 }
 
-// MEXCPongResponse represents PING/PONG response from MEXC
+// MEXCPongResponse represents PING/PONG response from MEXC.
 type MEXCPongResponse struct {
 	ID   int    `json:"id"`
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 }
 
-// handleWSMessage processes incoming WebSocket messages
+// handleWSMessage processes incoming WebSocket messages.
 func (s *MEXCSource) handleWSMessage(message []byte) {
 	// Log message diagnostics - check if empty
 	msgLen := len(message)
@@ -464,14 +470,14 @@ func (s *MEXCSource) handleWSMessage(message []byte) {
 		s.Logger().Warn("MEXC WebSocket received EMPTY message")
 		return
 	}
-	
+
 	// Log message details
-	hexDump := fmt.Sprintf("%x", message[:min(20, msgLen)])
+	hexDump := fmt.Sprintf("%x", message[:minInt(20, msgLen)])
 	s.Logger().Info("MEXC WebSocket message received",
 		"length", msgLen,
 		"first20hex", hexDump,
 		"fullMessage", string(message))
-	
+
 	// Check for PONG response: {"id":0,"code":0,"msg":"PONG"}
 	var pongResp MEXCPongResponse
 	if err := json.Unmarshal(message, &pongResp); err == nil {
@@ -479,35 +485,13 @@ func (s *MEXCSource) handleWSMessage(message []byte) {
 			s.Logger().Info("Received PONG from MEXC", "code", pongResp.Code)
 			return
 		}
-		
+
 		// Check for "Blocked" message
-		if strings.Contains(pongResp.Msg, "Blocked") || strings.Contains(pongResp.Msg, "Not Subscribed successfully") {
-			s.Logger().Warn("MEXC WebSocket blocked - switching to REST polling with exponential backoff",
-				"message", pongResp.Msg,
-				"backoff", s.wsRetryBackoff)
-			
-			// Mark WebSocket as blocked
-			s.wsBlocked = true
-			s.wsRetryTime = time.Now().Add(s.wsRetryBackoff)
-			
-			// Exponential backoff: 5min -> 15min -> 45min -> 2h15min -> 6h45min (max)
-			s.wsRetryBackoff = s.wsRetryBackoff * 3
-			if s.wsRetryBackoff > 6*time.Hour {
-				s.wsRetryBackoff = 6 * time.Hour // Cap at 6 hours
-			}
-			
-			// Close WebSocket and start polling
-			if s.wsClient != nil {
-				s.wsClient.Close()
-			}
-			
-			// Start polling loop in background
-			go s.pollLoopWhileBlocked(context.Background())
-			
+		if s.handleMEXCBlockedMessage(pongResp) {
 			return
 		}
 	}
-	
+
 	var msg MEXCWSMessage
 	if err := json.Unmarshal(message, &msg); err != nil {
 		s.Logger().Warn("Failed to parse WebSocket message as deals", "error", err, "raw", string(message))
@@ -524,17 +508,48 @@ func (s *MEXCSource) handleWSMessage(message []byte) {
 	}
 }
 
-// processWSDealsUpdate processes a deals (trades) update from WebSocket
+// handleMEXCBlockedMessage handles MEXC WebSocket blocked messages.
+func (s *MEXCSource) handleMEXCBlockedMessage(resp MEXCPongResponse) bool {
+	if !strings.Contains(resp.Msg, "Blocked") && !strings.Contains(resp.Msg, "Not Subscribed successfully") {
+		return false
+	}
+
+	s.Logger().Warn("MEXC WebSocket blocked - switching to REST polling with exponential backoff",
+		"message", resp.Msg,
+		"backoff", s.wsRetryBackoff)
+
+	// Mark WebSocket as blocked
+	s.wsBlocked = true
+	s.wsRetryTime = time.Now().Add(s.wsRetryBackoff)
+
+	// Exponential backoff: 5min -> 15min -> 45min -> 2h15min -> 6h45min (max)
+	s.wsRetryBackoff *= 3
+	if s.wsRetryBackoff > 6*time.Hour {
+		s.wsRetryBackoff = 6 * time.Hour // Cap at 6 hours
+	}
+
+	// Close WebSocket and start polling
+	if s.wsClient != nil {
+		_ = s.wsClient.Close()
+	}
+
+	// Start polling loop in background
+	go s.pollLoopWhileBlocked(context.Background())
+
+	return true
+}
+
+// processWSDealsUpdate processes a deals (trades) update from WebSocket.
 func (s *MEXCSource) processWSDealsUpdate(msg MEXCWSMessage) {
 	pairMappings := s.GetAllPairs()
-	
+
 	// Find unified symbol for this MEXC symbol
 	mexcToUnified := make(map[string]string)
 	for unified, mexcSymbol := range pairMappings {
 		mexcToUnified[mexcSymbol] = unified
 		mexcToUnified[strings.ToUpper(mexcSymbol)] = unified
 	}
-	
+
 	unifiedSymbol, ok := mexcToUnified[msg.Symbol]
 	if !ok {
 		s.Logger().Debug("Unknown MEXC symbol in deals", "symbol", msg.Symbol)
@@ -547,7 +562,7 @@ func (s *MEXCSource) processWSDealsUpdate(msg MEXCWSMessage) {
 		s.Logger().Warn("No deals in message", "symbol", unifiedSymbol)
 		return
 	}
-	
+
 	lastDeal := deals[len(deals)-1]
 	if lastDeal.Price == "" {
 		s.Logger().Warn("Missing price in deal", "symbol", unifiedSymbol)
@@ -556,8 +571,8 @@ func (s *MEXCSource) processWSDealsUpdate(msg MEXCWSMessage) {
 
 	price, err := decimal.NewFromString(lastDeal.Price)
 	if err != nil {
-		s.Logger().Warn("Failed to parse deal price", 
-			"symbol", unifiedSymbol, 
+		s.Logger().Warn("Failed to parse deal price",
+			"symbol", unifiedSymbol,
 			"price", lastDeal.Price,
 			"error", err)
 		return
@@ -574,17 +589,17 @@ func (s *MEXCSource) processWSDealsUpdate(msg MEXCWSMessage) {
 		"numDeals", len(deals))
 }
 
-// handleWSConnect handles WebSocket connection events
+// handleWSConnect handles WebSocket connection events.
 func (s *MEXCSource) handleWSConnect() {
 	s.Logger().Info("MEXC WebSocket connected")
 	s.SetHealthy(true)
-	
+
 	// Resubscribe to tickers on reconnection
 	s.Logger().Info("Resubscribing to MEXC tickers after connection")
 	go s.subscribeToTickers()
 }
 
-// handleWSDisconnect handles WebSocket disconnection events
+// handleWSDisconnect handles WebSocket disconnection events.
 func (s *MEXCSource) handleWSDisconnect(err error) {
 	if err != nil {
 		s.Logger().Warn("MEXC WebSocket disconnected", "error", err.Error())
@@ -594,8 +609,8 @@ func (s *MEXCSource) handleWSDisconnect(err error) {
 	s.SetHealthy(false)
 }
 
-// min returns the minimum of two integers
-func min(a, b int) int {
+// minInt returns the minimum of two integers.
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}

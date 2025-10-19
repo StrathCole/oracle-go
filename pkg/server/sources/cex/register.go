@@ -1,3 +1,4 @@
+// Package cex provides centralized exchange price sources.
 package cex
 
 import (

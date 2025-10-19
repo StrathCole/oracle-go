@@ -14,7 +14,7 @@ import (
 
 // FixerSource fetches fiat prices from Fixer.io API
 // https://fixer.io/product
-// Requires API key (paid service)
+// Requires API key (paid service).
 type FixerSource struct {
 	*sources.BaseSource
 
@@ -30,28 +30,31 @@ type fixerResponse struct {
 	Error   interface{}        `json:"error,omitempty"`
 }
 
+// NewFixerSourceFromConfig creates a new FixerSource from config.
+//
+//nolint:dupl
 func NewFixerSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbols, ok := config["symbols"].([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("symbols must be an array")
+		return nil, fmt.Errorf("%w", ErrSymbolsMustBeArray)
 	}
 
 	symbolStrs := make([]string, 0, len(symbols))
 	for _, s := range symbols {
 		if str, ok := s.(string); ok {
-			if strings.HasSuffix(str, "/USD") || str == "SDR/USD" {
+			if strings.HasSuffix(str, "/"+baseCurrency) || str == sdrUsdPair {
 				symbolStrs = append(symbolStrs, str)
 			}
 		}
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("no valid symbols for Fixer")
+		return nil, fmt.Errorf("%w", ErrNoValidSymbolsFixer)
 	}
 
 	apiKey, ok := config["api_key"].(string)
 	if !ok {
-		return nil, fmt.Errorf("api_key is required for Fixer")
+		return nil, fmt.Errorf("%w", ErrAPIKeyRequiredFixer)
 	}
 
 	timeout := 5 * time.Second
@@ -67,12 +70,12 @@ func NewFixerSourceFromConfig(config map[string]interface{}) (sources.Source, er
 	// Get logger from config (passed from main.go)
 	logger := sources.GetLoggerFromConfig(config)
 	if logger == nil {
-		return nil, fmt.Errorf("logger not provided in config")
+		return nil, fmt.Errorf("%w", ErrLoggerNotProvided)
 	}
 
 	pairs := make(map[string]string)
 	for _, symbol := range symbolStrs {
-		pairs[symbol] = "USD"
+		pairs[symbol] = baseCurrency
 	}
 
 	baseSource := sources.NewBaseSource("fixer", sources.SourceTypeFiat, pairs, logger)
@@ -91,10 +94,12 @@ func NewFixerSourceFromConfig(config map[string]interface{}) (sources.Source, er
 	return s, nil
 }
 
-func (s *FixerSource) Initialize(ctx context.Context) error {
+// Initialize initializes the Fixer source.
+func (s *FixerSource) Initialize(_ context.Context) error {
 	return nil
 }
 
+// Start starts the Fixer source.
 func (s *FixerSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Fixer source")
 
@@ -113,7 +118,7 @@ func (s *FixerSource) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.fetchWithRetries(ctx)
+				_ = s.fetchWithRetries(ctx)
 			}
 		}
 	}()
@@ -122,78 +127,29 @@ func (s *FixerSource) Start(ctx context.Context) error {
 }
 
 func (s *FixerSource) fetchWithRetries(ctx context.Context) error {
-	maxRetries := 5
-	initialBackoff := time.Second
-	maxBackoff := 2 * time.Minute
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		select {
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during retry")
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		err := s.fetchPrices(ctx)
-		if err == nil {
-			s.SetHealthy(true)
-			return nil
-		}
-
-		lastErr = err
-		s.Logger().Warn("Fetch attempt failed",
-			"attempt", attempt,
-			"max_retries", maxRetries,
-			"error", err,
-		)
-
-		if attempt == maxRetries {
-			break
-		}
-
-		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-
-		s.Logger().Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
-
-		select {
-		case <-time.After(backoff):
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during backoff")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	s.SetHealthy(false)
-	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
-	return lastErr
+	return FetchWithRetriesBase(ctx, s.BaseSource, s.StopChan(), s.fetchPrices)
 }
 
 func (s *FixerSource) fetchPrices(ctx context.Context) error {
 	symbols := s.Symbols()
 	currencies := make([]string, 0, len(symbols))
 	for _, symbol := range symbols {
-		if symbol == "SDR/USD" {
+		if symbol == sdrUsdPair {
 			currencies = append(currencies, "XDR")
 		} else {
 			parts := strings.Split(symbol, "/")
-			if len(parts) == 2 && parts[1] == "USD" {
+			if len(parts) == 2 && parts[1] == baseCurrency {
 				currencies = append(currencies, parts[0])
 			}
 		}
 	}
 
 	if len(currencies) == 0 {
-		return fmt.Errorf("no valid currencies to fetch")
+		return fmt.Errorf("%w", ErrNoCurrenciesToFetch)
 	}
 
-	url := fmt.Sprintf("https://api.fixer.io/latest?access_key=%s&base=USD&symbols=%s",
-		s.apiKey, strings.Join(currencies, ","))
+	url := fmt.Sprintf("https://api.fixer.io/latest?access_key=%s&base=%s&symbols=%s",
+		s.apiKey, baseCurrency, strings.Join(currencies, ","))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -204,16 +160,18 @@ func (s *FixerSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	var data fixerResponse
@@ -222,16 +180,16 @@ func (s *FixerSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if !data.Success {
-		return fmt.Errorf("API error: %v", data.Error)
+		return fmt.Errorf("%w: %v", sources.ErrAPIError, data.Error)
 	}
 
 	now := time.Now()
 	for currency, rate := range data.Rates {
 		var symbol string
 		if currency == "XDR" {
-			symbol = "SDR/USD"
+			symbol = sdrUsdPair
 		} else {
-			symbol = currency + "/USD"
+			symbol = currency + "/" + baseCurrency
 		}
 
 		price := 1.0 / rate
@@ -242,19 +200,23 @@ func (s *FixerSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
+// Type returns the source type.
 func (s *FixerSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *FixerSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *FixerSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *FixerSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
+// Stop stops the Fixer source.
 func (s *FixerSource) Stop() error {
 	s.Close()
 	return nil

@@ -16,7 +16,7 @@ const (
 	terraportUpdateInterval = 15 * time.Second
 )
 
-// TerraportSource fetches prices from Terraport DEX pairs via gRPC smart contract queries
+// TerraportSource fetches prices from Terraport DEX pairs via gRPC smart contract queries.
 type TerraportSource struct {
 	*sources.BaseSource
 	grpcClient     *client.Client
@@ -24,7 +24,7 @@ type TerraportSource struct {
 	pairs          []TerraportPair
 }
 
-// TerraportPairConfig represents configuration for a Terraport liquidity pair
+// TerraportPairConfig represents configuration for a Terraport liquidity pair.
 type TerraportPairConfig struct {
 	Symbol          string // e.g., "LUNC/USDC"
 	ContractAddress string // Terraport pair contract address
@@ -34,10 +34,10 @@ type TerraportPairConfig struct {
 	Decimals1       int    // Decimals for asset 1
 }
 
-// TerraportPair is an alias for TerraportPairConfig
+// TerraportPair is an alias for TerraportPairConfig.
 type TerraportPair = TerraportPairConfig
 
-// PoolResponse represents the response from querying a Terraport pair
+// PoolResponse represents the response from querying a Terraport pair.
 type PoolResponse struct {
 	Assets []struct {
 		Info struct {
@@ -52,14 +52,14 @@ type PoolResponse struct {
 	} `json:"assets"`
 }
 
-// TerraportConfig holds configuration for creating a Terraport source
+// TerraportConfig holds configuration for creating a Terraport source.
 type TerraportConfig struct {
 	Pairs      []TerraportPair
 	GRPCClient *client.Client
 	Interval   time.Duration
 }
 
-// NewTerraportSource creates a new Terraport source using gRPC client
+// NewTerraportSource creates a new Terraport source using gRPC client.
 func NewTerraportSource(config map[string]interface{}, grpcClient *client.Client) (sources.Source, error) {
 	// Parse CosmWasm pairs configuration using helper
 	pairs, err := sources.ParseCosmWasmPairs(config)
@@ -67,42 +67,30 @@ func NewTerraportSource(config map[string]interface{}, grpcClient *client.Client
 		return nil, fmt.Errorf("failed to parse pairs: %w", err)
 	}
 
+	// Initialize base source using helper
+	base, updateInterval, err := InitializeCosmWasmBase(
+		"terraport",
+		sources.SourceTypeCosmWasm,
+		pairs,
+		terraportUpdateInterval,
+		config,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert to TerraportPair array
 	terraportPairs := make([]TerraportPair, 0, len(pairs))
-
-	// Create simple map for BaseSource (symbol => contract_address)
-	simplePairs := make(map[string]string)
-
 	for _, p := range pairs {
-		terraportPair := TerraportPair{
+		terraportPairs = append(terraportPairs, TerraportPair{
 			Symbol:          p.Symbol,
 			ContractAddress: p.ContractAddress,
 			Asset0Denom:     p.Asset0Denom,
 			Asset1Denom:     p.Asset1Denom,
 			Decimals0:       p.Decimals0,
 			Decimals1:       p.Decimals1,
-		}
-
-		terraportPairs = append(terraportPairs, terraportPair)
-		simplePairs[p.Symbol] = p.ContractAddress
+		})
 	}
-
-	if len(terraportPairs) == 0 {
-		return nil, fmt.Errorf("no valid pairs configured")
-	}
-
-	// Get update interval
-	updateInterval := terraportUpdateInterval
-	if interval, ok := config["update_interval"].(string); ok {
-		if d, err := time.ParseDuration(interval); err == nil {
-			updateInterval = d
-		}
-	}
-
-	logger := sources.GetLoggerFromConfig(config)
-
-	// Create base with simple pairs map
-	base := sources.NewBaseSource("terraport", sources.SourceTypeCosmWasm, simplePairs, logger)
 
 	return &TerraportSource{
 		BaseSource:     base,
@@ -112,15 +100,15 @@ func NewTerraportSource(config map[string]interface{}, grpcClient *client.Client
 	}, nil
 }
 
-// Initialize prepares the source
-func (s *TerraportSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *TerraportSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Terraport source",
 		"pairs", len(s.pairs),
 		"grpc_endpoint", s.grpcClient.CurrentEndpoint())
 	return nil
 }
 
-// Start begins fetching prices
+// Start begins fetching prices.
 func (s *TerraportSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Terraport source")
 
@@ -153,28 +141,28 @@ func (s *TerraportSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop halts the source
+// Stop halts the source.
 func (s *TerraportSource) Stop() error {
 	s.Close()
 	return nil
 }
 
-// GetPrices returns current prices
-func (s *TerraportSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns current prices.
+func (s *TerraportSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	prices := s.GetAllPrices()
 	if len(prices) == 0 {
-		return nil, fmt.Errorf("no prices available")
+		return nil, fmt.Errorf("%w", ErrNoPricesAvailable)
 	}
 	return prices, nil
 }
 
-// Subscribe allows receiving price updates
+// Subscribe allows receiving price updates.
 func (s *TerraportSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// fetchPrices queries all pairs and updates prices
+// fetchPrices queries all pairs and updates prices.
 func (s *TerraportSource) fetchPrices(ctx context.Context) error {
 	now := time.Now()
 	successCount := 0
@@ -203,10 +191,11 @@ func (s *TerraportSource) fetchPrices(ctx context.Context) error {
 		return nil
 	}
 
-	return fmt.Errorf("failed to fetch any pair prices")
+	return fmt.Errorf("%w", ErrNoPoolPrices)
 }
 
-// fetchPairPrice queries a single pair contract for reserves and calculates price using gRPC
+// fetchPairPrice queries a single pair contract for reserves and calculates price using gRPC.
+//nolint:dupl
 func (s *TerraportSource) fetchPairPrice(ctx context.Context, pair TerraportPair) (decimal.Decimal, error) {
 	// Build query message
 	queryMsg := map[string]interface{}{
@@ -230,33 +219,11 @@ func (s *TerraportSource) fetchPairPrice(ctx context.Context, pair TerraportPair
 		return decimal.Zero, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// Calculate price from reserves
+	// Validate asset count
 	if len(poolResp.Assets) != 2 {
-		return decimal.Zero, fmt.Errorf("invalid pool response: expected 2 assets, got %d", len(poolResp.Assets))
+		return decimal.Zero, fmt.Errorf("%w: expected 2 assets, got %d", ErrInvalidPoolResponse, len(poolResp.Assets))
 	}
 
-	amount0, err := decimal.NewFromString(poolResp.Assets[0].Amount)
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to parse amount0: %w", err)
-	}
-
-	amount1, err := decimal.NewFromString(poolResp.Assets[1].Amount)
-	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to parse amount1: %w", err)
-	}
-
-	// Adjust for decimals
-	decimals0 := decimal.NewFromInt(int64(pair.Decimals0))
-	decimals1 := decimal.NewFromInt(int64(pair.Decimals1))
-
-	amount0 = amount0.Div(decimal.NewFromInt(10).Pow(decimals0))
-	amount1 = amount1.Div(decimal.NewFromInt(10).Pow(decimals1))
-
-	// Price = amount1 / amount0 (quote asset per base asset)
-	if amount0.IsZero() {
-		return decimal.Zero, fmt.Errorf("zero liquidity in pool")
-	}
-
-	price := amount1.Div(amount0)
-	return price, nil
+	// Calculate price using helper
+	return CalculatePoolPrice(poolResp.Assets[0].Amount, poolResp.Assets[1].Amount, pair.Decimals0, pair.Decimals1)
 }

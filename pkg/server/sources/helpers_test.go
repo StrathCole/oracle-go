@@ -120,10 +120,8 @@ func TestParsePairsFromMap_Invalid(t *testing.T) {
 				if result != nil {
 					t.Errorf("Expected nil result on error, got %v", result)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
 			}
 		})
 	}
@@ -282,117 +280,113 @@ func TestParseCosmWasmPairs_Invalid(t *testing.T) {
 				if len(result) > 0 {
 					t.Errorf("Expected empty result on error, got %v", result)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("Unexpected error: %v", err)
 			}
 		})
 	}
 }
 
 func TestValidateSymbolFormat(t *testing.T) {
-tests := []struct {
-name    string
-symbol  string
-wantErr bool
-errMsg  string
-}{
-{
-name:    "valid crypto pair with USD",
-symbol:  "LUNC/USD",
-wantErr: false,
-},
-{
-name:    "valid crypto pair with USDT",
-symbol:  "LUNC/USDT",
-wantErr: false,
-},
-{
-name:    "valid crypto pair with USDC",
-symbol:  "BTC/USDC",
-wantErr: false,
-},
-{
-name:    "valid fiat pair",
-symbol:  "EUR/USD",
-wantErr: false,
-},
-{
-name:    "valid crypto-crypto pair",
-symbol:  "LUNC/USTC",
-wantErr: false,
-},
-{
-name:    "invalid: no slash separator",
-symbol:  "LUNCUSDT",
-wantErr: true,
-errMsg:  "must be in BASE/QUOTE format",
-},
-{
-name:    "invalid: no quote currency",
-symbol:  "LUNC",
-wantErr: true,
-errMsg:  "must be in BASE/QUOTE format",
-},
-{
-name:    "invalid: empty string",
-symbol:  "",
-wantErr: true,
-errMsg:  "cannot be empty",
-},
-{
-name:    "invalid: empty base",
-symbol:  "/USD",
-wantErr: true,
-errMsg:  "BASE currency cannot be empty",
-},
-{
-name:    "invalid: empty quote",
-symbol:  "LUNC/",
-wantErr: true,
-errMsg:  "QUOTE currency cannot be empty",
-},
-{
-name:    "valid: with whitespace (trimmed)",
-symbol:  " LUNC / USD ",
-wantErr: false,
-},
-{
-name:    "invalid: too many slashes",
-symbol:  "LUNC/USD/USDT",
-wantErr: true,
-errMsg:  "must be in BASE/QUOTE format",
-},
+	tests := []struct {
+		name    string
+		symbol  string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid crypto pair with USD",
+			symbol:  "LUNC/USD",
+			wantErr: false,
+		},
+		{
+			name:    "valid crypto pair with USDT",
+			symbol:  "LUNC/USDT",
+			wantErr: false,
+		},
+		{
+			name:    "valid crypto pair with USDC",
+			symbol:  "BTC/USDC",
+			wantErr: false,
+		},
+		{
+			name:    "valid fiat pair",
+			symbol:  "EUR/USD",
+			wantErr: false,
+		},
+		{
+			name:    "valid crypto-crypto pair",
+			symbol:  "LUNC/USTC",
+			wantErr: false,
+		},
+		{
+			name:    "invalid: no slash separator",
+			symbol:  "LUNCUSDT",
+			wantErr: true,
+			errMsg:  "must be in BASE/QUOTE format",
+		},
+		{
+			name:    "invalid: no quote currency",
+			symbol:  "LUNC",
+			wantErr: true,
+			errMsg:  "must be in BASE/QUOTE format",
+		},
+		{
+			name:    "invalid: empty string",
+			symbol:  "",
+			wantErr: true,
+			errMsg:  "cannot be empty",
+		},
+		{
+			name:    "invalid: empty base",
+			symbol:  "/USD",
+			wantErr: true,
+			errMsg:  "BASE currency cannot be empty",
+		},
+		{
+			name:    "invalid: empty quote",
+			symbol:  "LUNC/",
+			wantErr: true,
+			errMsg:  "QUOTE currency cannot be empty",
+		},
+		{
+			name:    "valid: with whitespace (trimmed)",
+			symbol:  " LUNC / USD ",
+			wantErr: false,
+		},
+		{
+			name:    "invalid: too many slashes",
+			symbol:  "LUNC/USD/USDT",
+			wantErr: true,
+			errMsg:  "must be in BASE/QUOTE format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSymbolFormat(tt.symbol)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateSymbolFormat() expected error but got nil")
+					return
+				}
+				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+					t.Errorf("ValidateSymbolFormat() error = %v, want error containing %q", err, tt.errMsg)
+				}
+			} else if err != nil {
+				t.Errorf("ValidateSymbolFormat() unexpected error = %v", err)
+			}
+		})
+	}
 }
 
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-err := ValidateSymbolFormat(tt.symbol)
-
-if tt.wantErr {
-if err == nil {
-t.Errorf("ValidateSymbolFormat() expected error but got nil")
-return
-}
-if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
-t.Errorf("ValidateSymbolFormat() error = %v, want error containing %q", err, tt.errMsg)
-}
-} else {
-if err != nil {
-t.Errorf("ValidateSymbolFormat() unexpected error = %v", err)
-}
-}
-})
-}
-}
-
-// Helper function to check if a string contains a substring
+// Helper function to check if a string contains a substring.
 func contains(s, substr string) bool {
-for i := 0; i <= len(s)-len(substr); i++ {
-if s[i:i+len(substr)] == substr {
-return true
-}
-}
-return false
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

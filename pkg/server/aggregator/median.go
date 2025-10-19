@@ -1,3 +1,4 @@
+// Package aggregator provides price aggregation strategies.
 package aggregator
 
 import (
@@ -12,26 +13,26 @@ import (
 )
 
 const (
-	// OutlierThreshold is the percentage deviation from median to consider an outlier
+	// OutlierThreshold is the percentage deviation from median to consider an outlier.
 	OutlierThreshold = 0.10 // 10%
 )
 
-// MedianAggregator aggregates prices using median and rejects outliers
+// MedianAggregator aggregates prices using median and rejects outliers.
 type MedianAggregator struct {
 	logger *logging.Logger
 }
 
-// Ensure MedianAggregator implements Aggregator interface
+// Ensure MedianAggregator implements Aggregator interface.
 var _ Aggregator = (*MedianAggregator)(nil)
 
-// NewMedianAggregator creates a new median aggregator
+// NewMedianAggregator creates a new median aggregator.
 func NewMedianAggregator(logger *logging.Logger) *MedianAggregator {
 	return &MedianAggregator{
 		logger: logger,
 	}
 }
 
-// Aggregate computes median prices from multiple sources with outlier detection
+// Aggregate computes median prices from multiple sources with outlier detection.
 func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.Price, sourceWeights map[string]float64) (map[string]sources.Price, error) {
 	start := time.Now()
 	defer func() {
@@ -39,7 +40,7 @@ func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.
 	}()
 
 	if len(sourcePrices) == 0 {
-		return nil, fmt.Errorf("no source prices provided")
+		return nil, fmt.Errorf("%w", ErrNoSourcePrices)
 	}
 
 	// Collect all prices by NORMALIZED symbol to handle USDT/USD/USDC aliases
@@ -50,7 +51,7 @@ func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.
 		if w, ok := sourceWeights[sourceName]; ok {
 			weight = w
 		}
-		
+
 		for originalSymbol, price := range prices {
 			// Normalize the symbol (e.g., LUNC/USDT -> LUNC/USD)
 			normalizedSymbol := sources.NormalizeSymbol(originalSymbol)
@@ -82,17 +83,17 @@ func (a *MedianAggregator) Aggregate(sourcePrices map[string]map[string]sources.
 	}
 
 	if len(result) == 0 {
-		return nil, fmt.Errorf("no median prices computed")
+		return nil, fmt.Errorf("%w", ErrNoPricesComputed)
 	}
 
 	a.logger.Debug("Aggregated prices", "symbols", len(result))
 	return result, nil
 }
 
-// computeMedianWithOutlierRejection computes median with 10% outlier rejection
+// computeMedianWithOutlierRejection computes median with 10% outlier rejection.
 func (a *MedianAggregator) computeMedianWithOutlierRejection(symbol string, prices []priceWithSource) (sources.Price, error) {
 	if len(prices) == 0 {
-		return sources.Price{}, fmt.Errorf("no prices for symbol %s", symbol)
+		return sources.Price{}, fmt.Errorf("%w: %s", sources.ErrNoSymbolsForPrice, symbol)
 	}
 
 	// Single price - no outlier detection needed
@@ -148,8 +149,8 @@ func (a *MedianAggregator) computeMedianWithOutlierRejection(symbol string, pric
 	}, nil
 }
 
-// median computes the weighted median of a sorted price list
-// For weighted median: find the price where cumulative weight reaches 50% of total weight
+// median computes the weighted median of a sorted price list.
+// For weighted median: find the price where cumulative weight reaches 50% of total weight.
 func (a *MedianAggregator) median(prices []priceWithSource) decimal.Decimal {
 	n := len(prices)
 	if n == 0 {
@@ -169,10 +170,10 @@ func (a *MedianAggregator) median(prices []priceWithSource) decimal.Decimal {
 	// Find weighted median (price where cumulative weight reaches 50%)
 	targetWeight := totalWeight / 2.0
 	cumulativeWeight := 0.0
-	
+
 	for i, p := range prices {
 		cumulativeWeight += p.weight
-		
+
 		// If we've reached or passed the 50% mark
 		if cumulativeWeight >= targetWeight {
 			// If exactly at 50% and there's a next price, average them
@@ -188,7 +189,7 @@ func (a *MedianAggregator) median(prices []priceWithSource) decimal.Decimal {
 	return prices[n/2].price.Price
 }
 
-// priceWithSource tracks which source provided a price and its weight
+// priceWithSource tracks which source provided a price and its weight.
 type priceWithSource struct {
 	price  sources.Price
 	source string

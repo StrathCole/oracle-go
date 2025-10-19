@@ -1,3 +1,4 @@
+// Package client provides gRPC client functionality with failover support.
 package client
 
 import (
@@ -63,15 +64,15 @@ type Client struct {
 	ir codectypes.InterfaceRegistry
 }
 
-// ClientConfig holds configuration for creating a new Client.
-type ClientConfig struct {
+// Config holds configuration for creating a new Client.
+type Config struct {
 	Endpoints         []EndpointConfig             // gRPC endpoints (with failover and per-endpoint TLS)
 	ChainID           string                       // Chain ID (for context)
 	InterfaceRegistry codectypes.InterfaceRegistry // For unpacking Any types
 	Logger            zerolog.Logger               // Logger
 }
 
-// EndpointConfig represents a single gRPC endpoint with its TLS setting
+// EndpointConfig represents a single gRPC endpoint with its TLS setting.
 type EndpointConfig struct {
 	Address string
 	TLS     bool
@@ -79,9 +80,9 @@ type EndpointConfig struct {
 
 // NewClient creates a new gRPC client with failover support across multiple endpoints.
 // It establishes connections to all endpoints and creates service clients from the first endpoint.
-func NewClient(cfg ClientConfig) (*Client, error) {
+func NewClient(cfg Config) (*Client, error) {
 	if len(cfg.Endpoints) == 0 {
-		return nil, fmt.Errorf("at least one gRPC endpoint is required")
+		return nil, fmt.Errorf("%w", ErrNoEndpointsRequired)
 	}
 
 	conns := make([]*grpc.ClientConn, len(cfg.Endpoints))
@@ -95,17 +96,18 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 			transportCreds = grpc.WithTransportCredentials(
 				credentials.NewTLS(&tls.Config{
 					InsecureSkipVerify: false,
+					MinVersion:         tls.VersionTLS12,
 				}),
 			)
 		} else {
 			transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
 		}
 		
-		conn, err := grpc.Dial(epCfg.Address, transportCreds)
+		conn, err := grpc.NewClient(epCfg.Address, transportCreds)
 		if err != nil {
 			// Close any successful connections before returning
 			for j := 0; j < i; j++ {
-				conns[j].Close()
+				_ = conns[j].Close()
 			}
 			return nil, fmt.Errorf("failed to connect to %s: %w", epCfg.Address, err)
 		}
@@ -300,16 +302,16 @@ func WithFailoverRetry[T any](c *Client, call func() (T, error), maxAttempts int
 			time.Sleep(baseDelay) // Brief delay after rotation
 		} else {
 			// Exponential backoff: 500ms, 1s, 2s, 4s, 8s (capped)
-			delay := baseDelay * time.Duration(1<<min(currentEndpointAttempts, 4))
+			delay := baseDelay * time.Duration(1<<minInt(currentEndpointAttempts, 4))
 			time.Sleep(delay)
 		}
 	}
 
-	return zero, fmt.Errorf("all %d attempts failed across gRPC endpoints", maxAttempts)
+	return zero, fmt.Errorf("%w (attempted %d times)", ErrAllAttemptsFailedGRPC, maxAttempts)
 }
 
-// min returns the minimum of two integers
-func min(a, b int) int {
+// minInt returns the minimum of two integers.
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}

@@ -140,7 +140,7 @@ func TestBinanceSource_GetSourceSymbol(t *testing.T) {
 	}
 }
 
-// Integration test - requires network connection
+// Integration test - requires network connection.
 func TestBinanceSource_FetchPrices_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")

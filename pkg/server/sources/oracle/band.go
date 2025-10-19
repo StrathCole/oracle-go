@@ -17,9 +17,9 @@ const (
 	bandDefaultTimeout = 10 * time.Second
 )
 
-// BandProtocolSource fetches prices from Band Protocol oracle
+// BandProtocolSource fetches prices from Band Protocol oracle.
 // https://bandprotocol.com/
-// Supports both crypto and fiat price feeds
+// Supports both crypto and fiat price feeds.
 type BandProtocolSource struct {
 	*sources.BaseSource
 
@@ -28,7 +28,7 @@ type BandProtocolSource struct {
 	client   *http.Client
 }
 
-// BandPriceResult represents a single price from Band Protocol
+// BandPriceResult represents a single price from Band Protocol.
 type bandPriceResult struct {
 	Symbol      string `json:"symbol"`
 	Multiplier  string `json:"multiplier"`
@@ -37,15 +37,16 @@ type bandPriceResult struct {
 	ResolveTime string `json:"resolve_time"`
 }
 
-// BandPriceResponse represents the Band Protocol API response
+// BandPriceResponse represents the Band Protocol API response.
 type bandPriceResponse struct {
 	PriceResults []bandPriceResult `json:"price_results"`
 }
 
+// NewBandProtocolSource creates a new Band Protocol oracle source.
 func NewBandProtocolSource(config map[string]interface{}) (sources.Source, error) {
 	symbols, ok := config["symbols"].([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("symbols must be an array")
+		return nil, fmt.Errorf("%w", ErrSymbolsMustBeArray)
 	}
 
 	symbolStrs := make([]string, 0, len(symbols))
@@ -56,7 +57,7 @@ func NewBandProtocolSource(config map[string]interface{}) (sources.Source, error
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("symbols list is required")
+		return nil, fmt.Errorf("%w", ErrSymbolsListRequired)
 	}
 
 	timeout := bandDefaultTimeout
@@ -72,7 +73,7 @@ func NewBandProtocolSource(config map[string]interface{}) (sources.Source, error
 	// Get logger from config (passed from main.go)
 	logger := sources.GetLoggerFromConfig(config)
 	if logger == nil {
-		return nil, fmt.Errorf("logger not provided in config")
+		return nil, fmt.Errorf("%w", ErrLoggerNotProvided)
 	}
 
 	// Create symbol mapping (Band uses same symbols, no transformation needed)
@@ -94,11 +95,13 @@ func NewBandProtocolSource(config map[string]interface{}) (sources.Source, error
 	}, nil
 }
 
-func (s *BandProtocolSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *BandProtocolSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Band Protocol source", "symbols", len(s.Symbols()))
 	return nil
 }
 
+// Start starts the Band Protocol source.
 func (s *BandProtocolSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Band Protocol source")
 
@@ -144,7 +147,7 @@ func (s *BandProtocolSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(bandSymbols) == 0 {
-		return fmt.Errorf("no valid symbols to fetch")
+		return fmt.Errorf("%w", ErrNoValidSymbolsToFetch)
 	}
 
 	// Build request URL with multiple symbols parameters
@@ -167,10 +170,10 @@ func (s *BandProtocolSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	var data bandPriceResponse
@@ -179,7 +182,7 @@ func (s *BandProtocolSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if data.PriceResults == nil {
-		return fmt.Errorf("invalid response: no price results")
+		return fmt.Errorf("%w", ErrInvalidResponseNoPrices)
 	}
 
 	// Convert prices
@@ -221,28 +224,31 @@ func (r *bandPriceResult) getPrice() (float64, error) {
 	}
 
 	if multiplier == 0 {
-		return 0, fmt.Errorf("multiplier is zero")
+		return 0, fmt.Errorf("%w", ErrMultiplierIsZero)
 	}
 
 	return px / multiplier, nil
 }
 
+// Stop stops the Band Protocol source.
 func (s *BandProtocolSource) Stop() error {
 	s.Logger().Info("Stopping Band Protocol source")
 	s.Close()
 	return nil
 }
 
-func (s *BandProtocolSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *BandProtocolSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *BandProtocolSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
-// Type returns the source type (overrides BaseSource since it stores it differently)
+// Type returns the source type (overrides BaseSource since it stores it differently).
 func (s *BandProtocolSource) Type() sources.SourceType {
 	return sources.SourceTypeOracle
 }

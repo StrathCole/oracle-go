@@ -1,3 +1,4 @@
+// Package sources provides price source interfaces and implementations.
 package sources
 
 import (
@@ -7,8 +8,8 @@ import (
 	"tc.com/oracle-prices/pkg/logging"
 )
 
-// GetLoggerFromConfig extracts logger from config map or returns nil
-// Sources should use this to get the logger passed from main.go
+// GetLoggerFromConfig extracts logger from config map or returns nil.
+// Sources should use this to get the logger passed from main.go.
 func GetLoggerFromConfig(config map[string]interface{}) *logging.Logger {
 	if loggerInterface, ok := config["logger"]; ok {
 		if logger, ok := loggerInterface.(*logging.Logger); ok {
@@ -18,25 +19,25 @@ func GetLoggerFromConfig(config map[string]interface{}) *logging.Logger {
 	return nil
 }
 
-// ParsePairsFromMap extracts pair mappings from config where pairs is a map
-// Expected format: pairs: { "LUNC/USDT": "LUNCUSDT", "BTC/USD": "bitcoin" }
-// This is used by CEX sources that need to map unified symbols to source-specific symbols
+// ParsePairsFromMap extracts pair mappings from config where pairs is a map.
+// Expected format: pairs: { "LUNC/USDT": "LUNCUSDT", "BTC/USD": "bitcoin" }.
+// This is used by CEX sources that need to map unified symbols to source-specific symbols.
 func ParsePairsFromMap(config map[string]interface{}) (map[string]string, error) {
 	pairsRaw, ok := config["pairs"]
 	if !ok {
-		return nil, fmt.Errorf("'pairs' not found in config")
+		return nil, fmt.Errorf("%w: 'pairs' key", ErrInvalidConfig)
 	}
 
 	pairsMap, ok := pairsRaw.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("pairs must be a map[string]string")
+		return nil, fmt.Errorf("%w: pairs must be map[string]string", ErrInvalidConfig)
 	}
 
 	pairs := make(map[string]string, len(pairsMap))
 	for unified, sourceRaw := range pairsMap {
 		source, ok := sourceRaw.(string)
 		if !ok {
-			return nil, fmt.Errorf("pair value for %s must be a string, got %T", unified, sourceRaw)
+			return nil, fmt.Errorf("%w: %s is %T", ErrInvalidConfig, unified, sourceRaw)
 		}
 		// Validate unified symbol format
 		if err := ValidateSymbolFormat(unified); err != nil {
@@ -46,13 +47,13 @@ func ParsePairsFromMap(config map[string]interface{}) (map[string]string, error)
 	}
 
 	if len(pairs) == 0 {
-		return nil, fmt.Errorf("no pairs configured")
+		return nil, fmt.Errorf("%w", ErrNoPairsConfiguredHelper)
 	}
 
 	return pairs, nil
 }
 
-// CosmWasmPairConfig represents a DEX pair configuration for CosmWasm contracts
+// CosmWasmPairConfig represents a DEX pair configuration for CosmWasm contracts.
 type CosmWasmPairConfig struct {
 	Symbol          string // Unified symbol (e.g., "LUNC/USTC")
 	ContractAddress string // Pair contract address
@@ -70,16 +71,16 @@ type CosmWasmPairConfig struct {
 //     asset0_denom: "uluna"
 //     asset1_denom: "uusd"
 //     decimals0: 6
-//     decimals1: 6
+//     decimals1: 6.
 func ParseCosmWasmPairs(config map[string]interface{}) ([]CosmWasmPairConfig, error) {
 	pairsRaw, ok := config["pairs"]
 	if !ok {
-		return nil, fmt.Errorf("pairs configuration not found")
+		return nil, fmt.Errorf("%w: pairs configuration not found", ErrInvalidConfig)
 	}
 
 	pairsList, ok := pairsRaw.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("pairs must be an array")
+		return nil, fmt.Errorf("%w", ErrPairsMustBeArray)
 	}
 
 	pairs := make([]CosmWasmPairConfig, 0, len(pairsList))
@@ -87,7 +88,7 @@ func ParseCosmWasmPairs(config map[string]interface{}) ([]CosmWasmPairConfig, er
 	for i, pairRaw := range pairsList {
 		pairMap, ok := pairRaw.(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("pair at index %d must be an object", i)
+			return nil, fmt.Errorf("%w: pair at index %d is not an object", ErrInvalidConfig, i)
 		}
 
 		pair := CosmWasmPairConfig{
@@ -100,20 +101,20 @@ func ParseCosmWasmPairs(config map[string]interface{}) ([]CosmWasmPairConfig, er
 		}
 
 		if pair.Symbol == "" {
-			return nil, fmt.Errorf("pair at index %d missing required field 'symbol'", i)
+			return nil, fmt.Errorf("%w: pair[%d] missing 'symbol'", ErrInvalidConfig, i)
 		}
 		if err := ValidateSymbolFormat(pair.Symbol); err != nil {
-			return nil, fmt.Errorf("pair at index %d: %w", i, err)
+			return nil, fmt.Errorf("pair[%d] %s: %w", i, pair.Symbol, err)
 		}
 		if pair.ContractAddress == "" {
-			return nil, fmt.Errorf("pair %s missing required field 'contract_address'", pair.Symbol)
+			return nil, fmt.Errorf("%w: pair[%d] %s missing 'contract_address'", ErrInvalidConfig, i, pair.Symbol)
 		}
 
 		pairs = append(pairs, pair)
 	}
 
 	if len(pairs) == 0 {
-		return nil, fmt.Errorf("no valid pairs configured")
+		return nil, fmt.Errorf("%w: parsed pairs", ErrNoPairsConfiguredHelper)
 	}
 
 	return pairs, nil
@@ -141,41 +142,35 @@ func getIntFromMap(m map[string]interface{}, key string, defaultVal int) int {
 	}
 }
 
-func getBoolFromMap(m map[string]interface{}, key string, defaultVal bool) bool {
-	if v, ok := m[key].(bool); ok {
-		return v
-	}
-	return defaultVal
-}
-
 // ValidateSymbolFormat checks if a symbol is in valid BASE/QUOTE format
 // Valid formats:
 //   - "LUNC/USD", "LUNC/USDT", "LUNC/USDC" (crypto pairs)
 //   - "KRW/USD", "EUR/USD" (fiat pairs)
 //   - "BTC/USDT" (crypto pairs)
+//
 // Invalid formats:
 //   - "LUNC" (no quote currency)
 //   - "LUNCUSDT" (no separator)
-//   - "" (empty)
+//   - "" (empty).
 func ValidateSymbolFormat(symbol string) error {
 	if symbol == "" {
-		return fmt.Errorf("symbol cannot be empty")
+		return fmt.Errorf("%w", ErrInvalidSymbolFormat)
 	}
-	
+
 	parts := strings.Split(symbol, "/")
 	if len(parts) != 2 {
-		return fmt.Errorf("symbol must be in BASE/QUOTE format (e.g., 'LUNC/USD'), got '%s'", symbol)
+		return fmt.Errorf("%w: %s", ErrInvalidSymbolFormat, symbol)
 	}
-	
+
 	base := strings.TrimSpace(parts[0])
 	quote := strings.TrimSpace(parts[1])
-	
+
 	if base == "" {
-		return fmt.Errorf("symbol BASE currency cannot be empty in '%s'", symbol)
+		return fmt.Errorf("%w: %s", ErrEmptyBaseCurrency, symbol)
 	}
 	if quote == "" {
-		return fmt.Errorf("symbol QUOTE currency cannot be empty in '%s'", symbol)
+		return fmt.Errorf("%w: %s", ErrEmptyQuoteCurrency, symbol)
 	}
-	
+
 	return nil
 }

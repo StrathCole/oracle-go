@@ -29,15 +29,16 @@ type frankfurterResponse struct {
 	Rates  map[string]float64 `json:"rates"`
 }
 
+// NewFrankfurterSourceFromConfig creates a new FrankfurterSource from config.
 func NewFrankfurterSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbolsIface, ok := config["symbols"]
 	if !ok {
-		return nil, fmt.Errorf("missing 'symbols' in config")
+		return nil, fmt.Errorf("%w", ErrMissingSymbolsInConfig)
 	}
 
 	symbolList, ok := symbolsIface.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid 'symbols' type, expected list")
+		return nil, fmt.Errorf("%w", ErrInvalidSymbolsType)
 	}
 
 	symbolStrs := make([]string, 0, len(symbolList))
@@ -50,7 +51,7 @@ func NewFrankfurterSourceFromConfig(config map[string]interface{}) (sources.Sour
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("no valid symbols for Frankfurter")
+		return nil, fmt.Errorf("%w", ErrNoValidSymbolsFrankfurt)
 	}
 
 	timeout := 5 * time.Second
@@ -66,12 +67,12 @@ func NewFrankfurterSourceFromConfig(config map[string]interface{}) (sources.Sour
 	// Get logger from config (passed from main.go)
 	logger := sources.GetLoggerFromConfig(config)
 	if logger == nil {
-		return nil, fmt.Errorf("logger not provided in config")
+		return nil, fmt.Errorf("%w", ErrLoggerNotProvided)
 	}
 
 	pairs := make(map[string]string)
 	for _, symbol := range symbolStrs {
-		pairs[symbol] = "USD"
+		pairs[symbol] = baseCurrency
 	}
 
 	baseSource := sources.NewBaseSource("frankfurter", sources.SourceTypeFiat, pairs, logger)
@@ -89,10 +90,12 @@ func NewFrankfurterSourceFromConfig(config map[string]interface{}) (sources.Sour
 	return s, nil
 }
 
-func (s *FrankfurterSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *FrankfurterSource) Initialize(_ context.Context) error {
 	return nil
 }
 
+// Start starts the Frankfurter source.
 func (s *FrankfurterSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting Frankfurter source")
 
@@ -111,7 +114,7 @@ func (s *FrankfurterSource) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.fetchWithRetries(ctx)
+				_ = s.fetchWithRetries(ctx)
 			}
 		}
 	}()
@@ -120,56 +123,7 @@ func (s *FrankfurterSource) Start(ctx context.Context) error {
 }
 
 func (s *FrankfurterSource) fetchWithRetries(ctx context.Context) error {
-	maxRetries := 5
-	initialBackoff := time.Second
-	maxBackoff := 2 * time.Minute
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		select {
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during retry")
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		err := s.fetchPrices(ctx)
-		if err == nil {
-			s.SetHealthy(true)
-			return nil
-		}
-
-		lastErr = err
-		s.Logger().Warn("Fetch attempt failed",
-			"attempt", attempt,
-			"max_retries", maxRetries,
-			"error", err,
-		)
-
-		if attempt == maxRetries {
-			break
-		}
-
-		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-
-		s.Logger().Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
-
-		select {
-		case <-time.After(backoff):
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during backoff")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	s.SetHealthy(false)
-	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
-	return lastErr
+	return FetchWithRetriesBase(ctx, s.BaseSource, s.StopChan(), s.fetchPrices)
 }
 
 func (s *FrankfurterSource) fetchPrices(ctx context.Context) error {
@@ -183,7 +137,7 @@ func (s *FrankfurterSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if len(currencies) == 0 {
-		return fmt.Errorf("no valid currencies to fetch")
+		return fmt.Errorf("%w", ErrNoCurrenciesToFetch)
 	}
 
 	url := fmt.Sprintf("https://api.frankfurter.app/latest?from=USD&to=%s",
@@ -198,16 +152,18 @@ func (s *FrankfurterSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	var data frankfurterResponse
@@ -226,19 +182,23 @@ func (s *FrankfurterSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
+// Type returns the source type.
 func (s *FrankfurterSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *FrankfurterSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *FrankfurterSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *FrankfurterSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
+// Stop stops the Frankfurter source.
 func (s *FrankfurterSource) Stop() error {
 	s.Close()
 	return nil

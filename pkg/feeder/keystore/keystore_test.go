@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test mnemonic (DO NOT use in production)
+// Test mnemonic (DO NOT use in production).
 const testMnemonic = "notice oak worry limit wrap speak medal online prefer cluster roof addict wrist behave treat actual wasp year salad speed social layer crew genius"
 
 func TestGetAuth_ValidMnemonic(t *testing.T) {
@@ -164,41 +164,41 @@ func TestPrivKeyKeyring_PanicsOnUnimplementedMethods(t *testing.T) {
 
 	// Rename() should panic
 	assert.Panics(t, func() {
-		kr.Rename("old", "new")
+		_ = kr.Rename("old", "new")
 	}, "Rename() should panic")
 
 	// List() should panic
 	assert.Panics(t, func() {
-		kr.List()
+		_, _ = kr.List()
 	}, "List() should panic")
 
 	// Delete() should panic
 	assert.Panics(t, func() {
-		kr.Delete("test")
+		_ = kr.Delete("test")
 	}, "Delete() should panic")
 
 	// NewMnemonic() should panic
 	assert.Panics(t, func() {
-		kr.NewMnemonic("newkey", 0, "", "", hd.Secp256k1)
+		_, _, _ = kr.NewMnemonic("newkey", 0, "", "", hd.Secp256k1)
 	}, "NewMnemonic() should panic")
 
 	// NewAccount() should panic
 	assert.Panics(t, func() {
-		kr.NewAccount("newkey", testMnemonic, "", "", hd.Secp256k1)
+		_, _ = kr.NewAccount("newkey", testMnemonic, "", "", hd.Secp256k1)
 	}, "NewAccount() should panic")
 
 	// ExportPubKeyArmor() should panic
 	assert.Panics(t, func() {
-		kr.ExportPubKeyArmor("test")
+		_, _ = kr.ExportPubKeyArmor("test")
 	}, "ExportPubKeyArmor() should panic")
 
 	// ExportPrivKeyArmor() should panic
 	assert.Panics(t, func() {
-		kr.ExportPrivKeyArmor("test", "password")
+		_, _ = kr.ExportPrivKeyArmor("test", "password")
 	}, "ExportPrivKeyArmor() should panic")
 }
 
-// Helper function to generate a random test mnemonic
+// Helper function to generate a random test mnemonic.
 func generateTestMnemonic() (string, error) {
 	entropy, err := bip39.NewEntropy(256)
 	if err != nil {

@@ -34,7 +34,7 @@ func TestIMFSource_Initialize(t *testing.T) {
 	}
 
 	symbols := source.Symbols()
-	if len(symbols) != 1 || symbols[0] != "SDR/USD" {
+	if len(symbols) != 1 || symbols[0] != sdrUsdPair {
 		t.Errorf("Expected symbols [SDR/USD], got %v", symbols)
 	}
 }
@@ -60,8 +60,10 @@ func TestIMFSource_FetchPrices(t *testing.T) {
 	}
 
 	// Start source
-	go source.Start(context.Background())
-	defer source.Stop()
+	if err := source.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer func() { _ = source.Stop() }()
 
 	// Wait for first update (may take longer due to HTML parsing)
 	time.Sleep(5 * time.Second)
@@ -76,7 +78,7 @@ func TestIMFSource_FetchPrices(t *testing.T) {
 	}
 
 	// Check if SDR/USD exists
-	sdrPrice, ok := prices["SDR/USD"]
+	sdrPrice, ok := prices[sdrUsdPair]
 	if !ok {
 		t.Error("Expected SDR/USD price")
 	} else {

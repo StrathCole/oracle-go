@@ -21,7 +21,7 @@ const (
 	binancePollRate = 15 * time.Second // Update every 15s (vote period is 30s)
 )
 
-// BinanceSource fetches prices from Binance (supports both REST and WebSocket)
+// BinanceSource fetches prices from Binance (supports both REST and WebSocket).
 type BinanceSource struct {
 	*sources.BaseSource
 	useWebSocket bool
@@ -30,7 +30,7 @@ type BinanceSource struct {
 	wsClient     *ws.Client
 }
 
-// BinancePriceTicker represents lightweight price data from /ticker/price endpoint
+// BinancePriceTicker represents lightweight price data from /ticker/price endpoint.
 type BinancePriceTicker struct {
 	Symbol string `json:"symbol"` // e.g., "LUNCUSDT"
 	Price  string `json:"price"`  // Current price
@@ -41,7 +41,7 @@ type BinancePriceTicker struct {
 // - Timestamps are int64 (milliseconds)
 // - Prices (o/c/h/l) are strings with decimal precision
 // - Volumes (v/q/V/Q) are strings with decimal precision
-// - Trade IDs and counts are int64
+// - Trade IDs and counts are int64.
 type BinanceKlineMessage struct {
 	Stream string `json:"stream"` // Stream name (e.g., "btcusdt@kline_5m")
 	Data   struct {
@@ -70,7 +70,7 @@ type BinanceKlineMessage struct {
 	} `json:"data"`
 }
 
-// NewBinanceSource creates a new Binance source (REST or WebSocket based on config)
+// NewBinanceSource creates a new Binance source (REST or WebSocket based on config).
 func NewBinanceSource(config map[string]interface{}) (sources.Source, error) {
 	logger := sources.GetLoggerFromConfig(config)
 
@@ -124,13 +124,13 @@ func NewBinanceSource(config map[string]interface{}) (sources.Source, error) {
 	return source, nil
 }
 
-// Initialize prepares the source for operation
-func (s *BinanceSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source for operation.
+func (s *BinanceSource) Initialize(_ context.Context) error {
 	s.Logger().Info("Initializing Binance source", "pairs", len(s.Symbols()))
 	return nil
 }
 
-// Start begins fetching prices (REST or WebSocket based on configuration)
+// Start begins fetching prices (REST or WebSocket based on configuration).
 func (s *BinanceSource) Start(ctx context.Context) error {
 	// Do initial REST fetch to have prices immediately
 	s.Logger().Info("Performing initial price fetch")
@@ -151,24 +151,24 @@ func (s *BinanceSource) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop halts the source and cleans up resources
+// Stop halts the source and cleans up resources.
 func (s *BinanceSource) Stop() error {
 	s.Logger().Info("Stopping Binance source")
 
 	if s.wsClient != nil {
-		s.wsClient.Close()
+		_ = s.wsClient.Close()
 	}
 
 	s.Close()
 	return nil
 }
 
-// GetPrices returns the latest prices
-func (s *BinanceSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the latest prices.
+func (s *BinanceSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
-// Subscribe allows other components to receive price updates
+// Subscribe allows other components to receive price updates.
 func (s *BinanceSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
@@ -176,7 +176,7 @@ func (s *BinanceSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 
 // REST mode implementation
 
-// pollLoop continuously fetches prices at the configured interval
+// pollLoop continuously fetches prices at the configured interval.
 func (s *BinanceSource) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(binancePollRate)
 	defer ticker.Stop()
@@ -198,11 +198,11 @@ func (s *BinanceSource) pollLoop(ctx context.Context) {
 	}
 }
 
-// fetchPrices retrieves current prices from REST API
+// fetchPrices retrieves current prices from REST API.
 func (s *BinanceSource) fetchPrices(ctx context.Context) error {
 	// Build the full endpoint URL
 	url := s.apiURL + "/api/v3/ticker/price"
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -213,10 +213,10 @@ func (s *BinanceSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -258,21 +258,19 @@ func (s *BinanceSource) fetchPrices(ctx context.Context) error {
 
 // WebSocket mode implementation
 
-// startWebSocket initializes and starts WebSocket connection
+// startWebSocket initializes and starts WebSocket connection.
 func (s *BinanceSource) startWebSocket(ctx context.Context) error {
 	if err := s.wsClient.ConnectWithRetry(ctx); err != nil {
 		return fmt.Errorf("failed to connect WebSocket: %w", err)
 	}
 
 	// Subscribe to price streams
-	if err := s.subscribeToTickers(); err != nil {
-		return fmt.Errorf("failed to subscribe: %w", err)
-	}
+	s.subscribeToTickers()
 
 	return nil
 }
 
-// buildWebSocketURL creates the WebSocket URL with all symbol streams
+// buildWebSocketURL creates the WebSocket URL with all symbol streams.
 func (s *BinanceSource) buildWebSocketURL() string {
 	// Build stream names for all pairs
 	streams := make([]string, 0, len(s.Symbols()))
@@ -286,14 +284,13 @@ func (s *BinanceSource) buildWebSocketURL() string {
 	return s.wsURL + "/stream?streams=" + strings.Join(streams, "/")
 }
 
-// subscribeToTickers subscribes to all configured ticker streams
-// For Binance, subscription is done via URL parameters, so this is a no-op
-func (s *BinanceSource) subscribeToTickers() error {
+// subscribeToTickers subscribes to all configured ticker streams.
+// For Binance, subscription is done via URL parameters, so this is a no-op.
+func (s *BinanceSource) subscribeToTickers() {
 	s.Logger().Info("Binance streams subscribed via URL parameters")
-	return nil
 }
 
-// handleWSMessage processes incoming WebSocket messages
+// handleWSMessage processes incoming WebSocket messages.
 func (s *BinanceSource) handleWSMessage(message []byte) {
 	// Binance combined stream format: {"stream":"...", "data":{...}}
 	var klineMsg BinanceKlineMessage
@@ -308,24 +305,22 @@ func (s *BinanceSource) handleWSMessage(message []byte) {
 	}
 }
 
-// handleWSConnect is called when WebSocket connection is established
+// handleWSConnect is called when WebSocket connection is established.
 func (s *BinanceSource) handleWSConnect() {
 	s.Logger().Info("Binance WebSocket connected")
 	s.SetHealthy(true)
 
 	// Resubscribe to tickers (though for Binance this is a no-op since subscription is via URL)
-	if err := s.subscribeToTickers(); err != nil {
-		s.Logger().Error("Failed to resubscribe to tickers", "error", err)
-	}
+	s.subscribeToTickers()
 }
 
-// handleWSDisconnect is called when WebSocket connection is lost
+// handleWSDisconnect is called when WebSocket connection is lost.
 func (s *BinanceSource) handleWSDisconnect(err error) {
 	s.Logger().Warn("Binance WebSocket disconnected", "error", err)
 	s.SetHealthy(false)
 }
 
-// processKline updates price for a symbol from kline data
+// processKline updates price for a symbol from kline data.
 func (s *BinanceSource) processKline(msg *BinanceKlineMessage) error {
 	// Find unified symbol for this Binance symbol
 	binanceSymbol := strings.ToLower(msg.Data.Symbol)
@@ -365,11 +360,4 @@ func (s *BinanceSource) processKline(msg *BinanceKlineMessage) error {
 		"volume", volumeDecimal.String())
 
 	return nil
-}
-
-// Register the source in init
-func init() {
-	sources.Register("cex.binance", func(config map[string]interface{}) (sources.Source, error) {
-		return NewBinanceSource(config)
-	})
 }

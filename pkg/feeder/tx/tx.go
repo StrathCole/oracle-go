@@ -1,3 +1,4 @@
+// Package tx provides transaction building and broadcasting functionality.
 package tx
 
 import (
@@ -56,10 +57,10 @@ type BroadcastTxRequest struct {
 // It automatically retrieves account number and sequence from the chain.
 //
 // Returns the transaction response if successful, or an error if:
-// - Failed to get account info
-// - Failed to sign transaction
-// - Failed to broadcast transaction
-// - Transaction was rejected by the chain (non-zero code)
+// - Failed to get account info.
+// - Failed to sign transaction.
+// - Failed to broadcast transaction.
+// - Transaction was rejected by the chain (non-zero code).
 func (b *Broadcaster) BroadcastTx(ctx context.Context, req BroadcastTxRequest) (*sdk.TxResponse, error) {
 	// Get account info (account number and sequence)
 	accNum, sequence, err := b.client.GetAccount(ctx, req.Feeder)
@@ -132,14 +133,14 @@ func (b *Broadcaster) BroadcastTx(ctx context.Context, req BroadcastTxRequest) (
 
 	// Check transaction response code
 	if txResp.Code != abcitypes.CodeTypeOK {
-		return txResp, fmt.Errorf("transaction rejected: code=%d, log=%s", txResp.Code, txResp.RawLog)
+		return txResp, fmt.Errorf("%w: code=%d, log=%s", ErrTransactionRejected, txResp.Code, txResp.RawLog)
 	}
 
 	b.logger.Info().
 		Str("tx_hash", txResp.TxHash).
-		Uint64("height", uint64(txResp.Height)).
-		Uint64("gas_used", uint64(txResp.GasUsed)).
-		Uint64("gas_wanted", uint64(txResp.GasWanted)).
+		Uint64("height", uint64(txResp.Height)).        // #nosec G115 -- Height is always non-negative
+		Uint64("gas_used", uint64(txResp.GasUsed)).     // #nosec G115 -- GasUsed is always non-negative
+		Uint64("gas_wanted", uint64(txResp.GasWanted)). // #nosec G115 -- GasWanted is always non-negative
 		Msg("Transaction broadcast successful")
 
 	return txResp, nil
@@ -151,6 +152,11 @@ func (b *Broadcaster) BroadcastTx(ctx context.Context, req BroadcastTxRequest) (
 //
 // Returns the estimated gas limit with a 20% safety buffer.
 func EstimateGas(numMsgs int) uint64 {
+	// Validate numMsgs is non-negative
+	if numMsgs < 0 {
+		numMsgs = 0
+	}
+
 	// Base gas for transaction overhead
 	const baseGas uint64 = 50000
 
@@ -158,11 +164,12 @@ func EstimateGas(numMsgs int) uint64 {
 	const gasPerMsg uint64 = 75000
 
 	// Calculate base estimate
+	// #nosec G115 -- numMsgs validated to be non-negative above
 	estimate := baseGas + (uint64(numMsgs) * gasPerMsg)
-	
+
 	// Add 20% safety buffer to handle gas fluctuations
 	buffer := estimate / 5 // 20%
-	
+
 	return estimate + buffer
 }
 
@@ -177,6 +184,12 @@ func CalculateFee(gasLimit uint64, gasPriceStr string, feeDenom string) (sdk.Coi
 		return nil, fmt.Errorf("invalid gas price: %w", err)
 	}
 
+	// Bounds check: gasLimit must fit in int64 for MulInt64
+	const maxInt64 int64 = 9223372036854775807
+	if gasLimit > uint64(maxInt64) {
+		return nil, fmt.Errorf("%w: gas limit %d exceeds maximum", ErrInvalidParameter, gasLimit)
+	}
+
 	// Calculate fee: gasLimit * gasPrice
 	feeAmount := gasPrice.MulInt64(int64(gasLimit)).Ceil().TruncateInt()
 
@@ -184,7 +197,7 @@ func CalculateFee(gasLimit uint64, gasPriceStr string, feeDenom string) (sdk.Coi
 }
 
 // DefaultFee returns a default fee for oracle transactions.
-// Terra Classic typical fee: 100000 uluna per message
+// Terra Classic typical fee: 100000 uluna per message.
 func DefaultFee(numMsgs int) sdk.Coins {
 	const feePerMsg = 100000 // 0.1 LUNC per message
 	totalFee := int64(numMsgs * feePerMsg)

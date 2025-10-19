@@ -8,23 +8,6 @@ import (
 	"tc.com/oracle-prices/pkg/server/sources"
 )
 
-// mockGRPCClient is a simple mock for testing
-type mockGRPCClient struct {
-	queryResponse []byte
-	queryError    error
-}
-
-func (m *mockGRPCClient) QuerySmartContract(ctx context.Context, contractAddress string, queryMsg []byte) ([]byte, error) {
-	if m.queryError != nil {
-		return nil, m.queryError
-	}
-	return m.queryResponse, nil
-}
-
-func (m *mockGRPCClient) CurrentEndpoint() string {
-	return "localhost:9090"
-}
-
 func TestTerraportSource_NewSource(t *testing.T) {
 	config := map[string]interface{}{
 		"pairs": []interface{}{

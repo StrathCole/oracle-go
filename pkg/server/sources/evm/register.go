@@ -1,3 +1,4 @@
+// Package evm provides EVM-based price sources (e.g., Uniswap).
 package evm
 
 import (

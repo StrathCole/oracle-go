@@ -1,3 +1,4 @@
+// Package sources provides price source interfaces and implementations.
 package sources
 
 import (
@@ -7,19 +8,25 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// SourceType represents the type of price source
+// SourceType represents the type of price source.
 type SourceType string
 
 const (
-	SourceTypeCEX      SourceType = "cex"
+	// SourceTypeCEX is a centralized exchange source.
+	SourceTypeCEX SourceType = "cex"
+	// SourceTypeCosmWasm is a CosmWasm-based source.
 	SourceTypeCosmWasm SourceType = "cosmwasm"
-	SourceTypeEVM      SourceType = "evm"
-	SourceTypeOracle   SourceType = "oracle"
-	SourceTypeFiat     SourceType = "fiat"
-	SourceTypeSDR      SourceType = "sdr"
+	// SourceTypeEVM is an EVM-based source.
+	SourceTypeEVM SourceType = "evm"
+	// SourceTypeOracle is an oracle aggregator source.
+	SourceTypeOracle SourceType = "oracle"
+	// SourceTypeFiat is a fiat currency source.
+	SourceTypeFiat SourceType = "fiat"
+	// SourceTypeSDR is an SDR basket source.
+	SourceTypeSDR SourceType = "sdr"
 )
 
-// Price represents a price for a symbol at a specific time
+// Price represents a price for a symbol at a specific time.
 type Price struct {
 	Symbol    string          `json:"symbol"`
 	Price     decimal.Decimal `json:"price"`
@@ -28,14 +35,14 @@ type Price struct {
 	Source    string          `json:"source"`
 }
 
-// PriceUpdate represents a price update event
+// PriceUpdate represents a price update event.
 type PriceUpdate struct {
 	Source string
 	Prices map[string]Price
 	Error  error
 }
 
-// Source defines the interface that all price sources must implement
+// Source defines the interface that all price sources must implement.
 type Source interface {
 	// Initialize prepares the source for operation
 	Initialize(ctx context.Context) error
@@ -68,5 +75,5 @@ type Source interface {
 	LastUpdate() time.Time
 }
 
-// SourceFactory is a function that creates a new Source instance
+// SourceFactory is a function that creates a new Source instance.
 type SourceFactory func(config map[string]interface{}) (Source, error)

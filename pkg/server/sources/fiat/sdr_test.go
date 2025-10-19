@@ -34,7 +34,7 @@ func TestSDRSource_Initialize(t *testing.T) {
 	}
 
 	symbols := source.Symbols()
-	if len(symbols) != 1 || symbols[0] != "SDR/USD" {
+	if len(symbols) != 1 || symbols[0] != sdrUsdPair {
 		t.Errorf("Expected symbols [SDR/USD], got %v", symbols)
 	}
 }
@@ -102,7 +102,7 @@ func TestSDRSource_CalculateSDR(t *testing.T) {
 		t.Fatalf("GetPrices failed: %v", err)
 	}
 
-	sdrPrice, ok := prices["SDR/USD"]
+	sdrPrice, ok := prices[sdrUsdPair]
 	if !ok {
 		t.Fatal("Expected SDR/USD price")
 	}
@@ -158,22 +158,22 @@ func TestSDRSource_MissingCurrencies(t *testing.T) {
 	}
 }
 
-// mockFiatSource implements sources.Source for testing
+// mockFiatSource implements sources.Source for testing.
 type mockFiatSource struct {
 	name    string
 	healthy bool
 	prices  map[string]sources.Price
 }
 
-func (m *mockFiatSource) Initialize(ctx context.Context) error { return nil }
-func (m *mockFiatSource) Start(ctx context.Context) error      { return nil }
-func (m *mockFiatSource) Stop() error                          { return nil }
+func (m *mockFiatSource) Initialize(_ context.Context) error { return nil }
+func (m *mockFiatSource) Start(_ context.Context) error      { return nil }
+func (m *mockFiatSource) Stop() error                        { return nil }
 
-func (m *mockFiatSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+func (m *mockFiatSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return m.prices, nil
 }
 
-func (m *mockFiatSource) Subscribe(updates chan<- sources.PriceUpdate) error {
+func (m *mockFiatSource) Subscribe(_ chan<- sources.PriceUpdate) error {
 	return nil
 }
 

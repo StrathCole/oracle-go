@@ -25,6 +25,7 @@ type IMFSource struct {
 	client   *http.Client
 }
 
+// NewIMFSourceFromConfig creates a new IMFSource from config.
 func NewIMFSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbols, ok := config["symbols"].([]interface{})
 	if !ok || len(symbols) == 0 {
@@ -43,7 +44,7 @@ func NewIMFSourceFromConfig(config map[string]interface{}) (sources.Source, erro
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("IMF source requires SDR symbol")
+		return nil, fmt.Errorf("%w", ErrIMFRequiresSDR)
 	}
 
 	timeout := 10 * time.Second
@@ -59,7 +60,7 @@ func NewIMFSourceFromConfig(config map[string]interface{}) (sources.Source, erro
 	// Get logger from config (passed from main.go)
 	logger := sources.GetLoggerFromConfig(config)
 	if logger == nil {
-		return nil, fmt.Errorf("logger not provided in config")
+		return nil, fmt.Errorf("%w", ErrLoggerNotProvided)
 	}
 
 	pairs := make(map[string]string)
@@ -82,10 +83,12 @@ func NewIMFSourceFromConfig(config map[string]interface{}) (sources.Source, erro
 	return s, nil
 }
 
-func (s *IMFSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *IMFSource) Initialize(_ context.Context) error {
 	return nil
 }
 
+// Start starts the IMF source.
 func (s *IMFSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting IMF source")
 
@@ -104,7 +107,9 @@ func (s *IMFSource) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.fetchWithRetries(ctx)
+				if err := s.fetchWithRetries(ctx); err != nil {
+					s.Logger().Error("Failed to fetch IMF prices", "error", err)
+				}
 			}
 		}
 	}()
@@ -113,56 +118,7 @@ func (s *IMFSource) Start(ctx context.Context) error {
 }
 
 func (s *IMFSource) fetchWithRetries(ctx context.Context) error {
-	maxRetries := 5
-	initialBackoff := time.Second
-	maxBackoff := 2 * time.Minute
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		select {
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during retry")
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		err := s.fetchPrices(ctx)
-		if err == nil {
-			s.SetHealthy(true)
-			return nil
-		}
-
-		lastErr = err
-		s.Logger().Warn("Fetch attempt failed",
-			"attempt", attempt,
-			"max_retries", maxRetries,
-			"error", err,
-		)
-
-		if attempt == maxRetries {
-			break
-		}
-
-		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-
-		s.Logger().Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
-
-		select {
-		case <-time.After(backoff):
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during backoff")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	s.SetHealthy(false)
-	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
-	return lastErr
+	return FetchWithRetriesBase(ctx, s.BaseSource, s.StopChan(), s.fetchPrices)
 }
 
 func (s *IMFSource) fetchPrices(ctx context.Context) error {
@@ -175,10 +131,12 @@ func (s *IMFSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch IMF page: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -192,7 +150,7 @@ func (s *IMFSource) fetchPrices(ctx context.Context) error {
 	re := regexp.MustCompile(`SDR\s*1\s*=\s*US\$\s*</td>\s*<td[^>]*>\s*([\d.]+)`)
 	matches := re.FindSubmatch(body)
 	if len(matches) < 2 {
-		return fmt.Errorf("failed to find SDR rate in IMF page")
+		return fmt.Errorf("%w", ErrSDRRateNotFound)
 	}
 
 	rateStr := string(matches[1])
@@ -202,7 +160,7 @@ func (s *IMFSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if rate <= 0 {
-		return fmt.Errorf("invalid SDR rate: %f", rate)
+		return fmt.Errorf("%w: %f", ErrInvalidSDRRate, rate)
 	}
 
 	now := time.Now()
@@ -212,19 +170,23 @@ func (s *IMFSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
+// Type returns the source type.
 func (s *IMFSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *IMFSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *IMFSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *IMFSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
+// Stop stops the IMF source.
 func (s *IMFSource) Stop() error {
 	s.Close()
 	return nil

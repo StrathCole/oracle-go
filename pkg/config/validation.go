@@ -1,3 +1,4 @@
+// Package config provides configuration loading and validation for oracle-go.
 package config
 
 import (
@@ -6,12 +7,12 @@ import (
 	"strings"
 )
 
-// Validate checks configuration for errors
+// Validate checks configuration for errors.
 func Validate(cfg *Config) error {
 	// Validate mode
 	mode := cfg.NormalizeMode()
-	if mode != "both" && mode != "server" && mode != "feeder" {
-		return fmt.Errorf("invalid mode: %s (must be 'both', 'server', or 'feeder')", cfg.Mode)
+	if mode != ModeBoth && mode != ModeServer && mode != ModeFeeder {
+		return fmt.Errorf("%w: %s (must be 'both', 'server', or 'feeder')", ErrInvalidMode, cfg.Mode)
 	}
 
 	// Validate server config if in server mode
@@ -31,7 +32,7 @@ func Validate(cfg *Config) error {
 	// Validate sources if in server mode
 	if cfg.IsServerMode() {
 		if len(cfg.Sources) == 0 {
-			return fmt.Errorf("at least one price source must be configured")
+			return ErrNoSourcesConfigured
 		}
 		for i, source := range cfg.Sources {
 			if err := validateSourceConfig(&source); err != nil {
@@ -52,19 +53,19 @@ func validateServerConfig(cfg *ServerConfig) error {
 	// Validate aggregate mode
 	mode := strings.ToLower(cfg.AggregateMode)
 	if mode != "median" && mode != "average" {
-		return fmt.Errorf("invalid aggregate_mode: %s (must be 'median' or 'average')", cfg.AggregateMode)
+		return fmt.Errorf("%w: %s", ErrInvalidAggregateMode, cfg.AggregateMode)
 	}
 
 	// Validate TLS config
 	if cfg.HTTP.TLS.Enabled {
 		if cfg.HTTP.TLS.Cert == "" || cfg.HTTP.TLS.Key == "" {
-			return fmt.Errorf("TLS cert and key must be specified when TLS is enabled")
+			return fmt.Errorf("%w", ErrTLSConfigIncomplete)
 		}
 		if _, err := os.Stat(cfg.HTTP.TLS.Cert); err != nil {
-			return fmt.Errorf("TLS cert file not found: %s", cfg.HTTP.TLS.Cert)
+			return fmt.Errorf("%w: %s", ErrTLSCertNotFound, cfg.HTTP.TLS.Cert)
 		}
 		if _, err := os.Stat(cfg.HTTP.TLS.Key); err != nil {
-			return fmt.Errorf("TLS key file not found: %s", cfg.HTTP.TLS.Key)
+			return fmt.Errorf("%w: %s", ErrTLSKeyNotFound, cfg.HTTP.TLS.Key)
 		}
 	}
 
@@ -74,69 +75,69 @@ func validateServerConfig(cfg *ServerConfig) error {
 func validateFeederConfig(cfg *FeederConfig) error {
 	// Validate chain ID
 	if cfg.ChainID == "" {
-		return fmt.Errorf("chain_id must be specified")
+		return fmt.Errorf("%w", ErrChainIDRequired)
 	}
 
 	// Validate gRPC endpoints
 	if len(cfg.GRPCEndpoints) == 0 {
-		return fmt.Errorf("at least one grpc_endpoint must be specified")
+		return fmt.Errorf("%w", ErrNoGRPCEndpoints)
 	}
 	for i, ep := range cfg.GRPCEndpoints {
 		if ep.Host == "" {
-			return fmt.Errorf("grpc_endpoints[%d]: host must be specified", i)
+			return fmt.Errorf("%w (grpc_endpoints[%d])", ErrGRPCHostRequired, i)
 		}
 	}
 
 	// Validate RPC endpoints (required - no fallback to gRPC)
 	if len(cfg.RPCEndpoints) == 0 {
-		return fmt.Errorf("at least one rpc_endpoint must be specified")
+		return fmt.Errorf("%w", ErrNoRPCEndpoints)
 	}
 	for i, ep := range cfg.RPCEndpoints {
 		if ep.Host == "" {
-			return fmt.Errorf("rpc_endpoints[%d]: host must be specified", i)
+			return fmt.Errorf("%w (rpc_endpoints[%d])", ErrRPCHostRequired, i)
 		}
 	}
 
 	// Validate validators
 	if len(cfg.Validators) == 0 {
-		return fmt.Errorf("at least one validator must be specified")
+		return fmt.Errorf("%w", ErrNoValidators)
 	}
 	for i, val := range cfg.Validators {
 		if !strings.HasPrefix(val, "terravaloper") && !strings.HasPrefix(val, "cosmosvaloper") {
-			return fmt.Errorf("validator[%d] must start with terravaloper or cosmosvaloper", i)
+			return fmt.Errorf("%w (validator[%d])", ErrInvalidValidator, i)
 		}
 		// Check for placeholder values
 		if strings.Contains(val, "xxx") || strings.Contains(val, "...") {
-			return fmt.Errorf("validator[%d] is a placeholder value '%s' - please replace with actual validator address", i, val)
+			return fmt.Errorf("%w: %s (validator[%d])", ErrPlaceholderValidator, val, i)
 		}
 		// Validate minimum length (bech32 addresses are at least 39 characters)
 		if len(val) < 39 {
-			return fmt.Errorf("validator[%d] '%s' is too short - must be a valid bech32 address", i, val)
+			return fmt.Errorf("%w (validator[%d])", ErrValidatorTooShort, i)
 		}
 	}
 
 	// Validate mnemonic (either direct or from env)
 	if cfg.Mnemonic == "" && cfg.MnemonicEnv == "" {
-		return fmt.Errorf("either mnemonic or mnemonic_env must be specified")
+		return fmt.Errorf("%w", ErrMnemonicRequired)
 	}
 	if cfg.MnemonicEnv != "" {
 		if os.Getenv(cfg.MnemonicEnv) == "" {
-			return fmt.Errorf("environment variable %s not set (required for mnemonic)", cfg.MnemonicEnv)
+			return fmt.Errorf("%w: %s", ErrMnemonicEnvNotSet, cfg.MnemonicEnv)
 		}
 	}
 
 	// Validate fee configuration
 	if cfg.FeeAmount == "" && cfg.GasPrice == "" {
-		return fmt.Errorf("either fee_amount or gas_price must be specified")
+		return fmt.Errorf("%w", ErrFeeConfigRequired)
 	}
 
 	// Validate price source
 	if cfg.PriceSource.URL == "" {
-		return fmt.Errorf("price_source.url must be specified")
+		return fmt.Errorf("%w", ErrPriceSourceURLRequired)
 	}
 	srcType := strings.ToLower(cfg.PriceSource.Type)
 	if srcType != "http" && srcType != "grpc" && srcType != "websocket" {
-		return fmt.Errorf("invalid price_source.type: %s (must be 'http', 'grpc', or 'websocket')", cfg.PriceSource.Type)
+		return fmt.Errorf("%w: %s", ErrInvalidPriceSourceType, cfg.PriceSource.Type)
 	}
 
 	// Validate vote period (default to 30 if not specified)
@@ -158,17 +159,17 @@ func validateSourceConfig(cfg *SourceConfig) error {
 		}
 	}
 	if !typeValid {
-		return fmt.Errorf("invalid type: %s (must be one of: %s)", cfg.Type, strings.Join(validTypes, ", "))
+		return fmt.Errorf("%w: %s", ErrInvalidSourceType, cfg.Type)
 	}
 
 	// Validate name
 	if cfg.Name == "" {
-		return fmt.Errorf("name must be specified")
+		return fmt.Errorf("%w", ErrSourceNameRequired)
 	}
 
 	// Weight should be positive (0 defaults to 1.0 at runtime)
 	if cfg.Weight < 0 {
-		return fmt.Errorf("weight must be >= 0")
+		return fmt.Errorf("%w", ErrSourceWeightMustBeNonNegative)
 	}
 
 	return nil
@@ -185,13 +186,13 @@ func validateLoggingConfig(cfg *LoggingConfig) error {
 		}
 	}
 	if !levelValid {
-		return fmt.Errorf("invalid level: %s (must be one of: %s)", cfg.Level, strings.Join(validLevels, ", "))
+		return fmt.Errorf("%w: %s", ErrInvalidLogLevel, cfg.Level)
 	}
 
 	// Validate format
 	formatValid := strings.ToLower(cfg.Format) == "json" || strings.ToLower(cfg.Format) == "text"
 	if !formatValid {
-		return fmt.Errorf("invalid format: %s (must be 'json' or 'text')", cfg.Format)
+		return fmt.Errorf("%w: %s", ErrInvalidLogFormat, cfg.Format)
 	}
 
 	return nil

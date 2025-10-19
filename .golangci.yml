@@ -1,0 +1,131 @@
+# golangci-lint configuration version
+version: 2
+
+run:
+  timeout: 5m
+  go: '1.23'
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    # Enabled by default (explicitly listed for clarity)
+    - errcheck      # Check for unchecked errors
+    - govet         # Reports suspicious constructs
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Advanced Go linter (includes gosimple, unused, etc.)
+    - unused        # Check for unused constants, variables, functions
+
+    # Code quality
+    - misspell      # Spell checker
+    - revive        # Drop-in replacement for golint
+    - gosec         # Security checker
+    - gocritic      # Opinionated linter
+    - bodyclose     # Check HTTP response body is closed
+    - noctx         # Check context in HTTP requests
+    - errname       # Check error naming conventions
+    - goconst       # Find repeated strings that could be constants
+    - gocyclo       # Check cyclomatic complexity
+    - godot         # Check comment formatting
+    - goprintffuncname # Check printf-style function names
+    - nakedret      # Check for naked returns
+    - prealloc      # Find slice declarations that could be preallocated
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Find unused function parameters
+    - whitespace    # Check for unnecessary whitespace
+    
+    # Additional quality checks
+    - dupl          # Check for duplicate code
+    - gocognit      # Check cognitive complexity
+    - nestif        # Check deeply nested if statements
+    - nilnil        # Check that there is no simultaneous return of nil error and nil value
+    - nilerr        # Check for nil errors
+    - thelper       # Check test helper functions
+    - wastedassign  # Check for wasted assignments
+    - errorlint     # Error wrapping with Go 1.13+ errors
+    - contextcheck  # Check context usage
+    - copyloopvar   # Detect places where loop variables are copied
+    - err113        # Check error handling expressions
+    - exhaustive    # Check exhaustiveness of enum switch statements
+
+linters-settings:
+  gocyclo:
+    min-complexity: 20  # Slightly higher for real-world code
+  
+  gocognit:
+    min-complexity: 30  # Cognitive complexity threshold
+  
+  nestif:
+    min-complexity: 5   # Max nesting level
+  
+  misspell:
+    locale: US
+  
+  gosec:
+    excludes:
+      - G404  # Allow weak random number generator in non-crypto contexts
+  
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+      - name: error-return
+      - name: error-naming
+      - name: if-return
+      - name: var-naming
+      - name: package-comments
+      - name: blank-imports
+      - name: context-as-argument
+      - name: error-strings
+      - name: increment-decrement
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - paramTypeCombine  # Can make code less readable
+      - unnamedResult     # Named returns are sometimes clearer
+      - hugeParam         # Too many false positives
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 3
+  
+  exclude-rules:
+    # Exclude some linters from test files (but keep most)
+    - path: _test\.go
+      linters:
+        - gosec        # Security checks less relevant in tests
+        - gocyclo      # Tests can be complex
+        - gocognit     # Tests can be complex
+        - funlen       # Tests can be long
+        - dupl         # Test duplication is acceptable
+    
+    # Allow long functions in main.go (CLI setup)
+    - path: cmd/oracle-go/main\.go
+      linters:
+        - gocyclo
+        - gocognit
+        - funlen
+    
+    # Generated protobuf files
+    - path: \.pb\.go$
+      linters:
+        - all
+    
+    # Exclude some common false positives
+    - text: "weak cryptographic primitive"
+      linters:
+        - gosec
+    
+    - text: "G304: Potential file inclusion via variable"
+      linters:
+        - gosec
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true

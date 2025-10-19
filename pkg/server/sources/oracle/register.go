@@ -1,3 +1,4 @@
+// Package oracle provides oracle aggregator price sources (e.g., Band Protocol).
 package oracle
 
 import (

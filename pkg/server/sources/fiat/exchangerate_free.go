@@ -15,7 +15,7 @@ import (
 // ExchangeRateFreeSource fetches fiat prices from ExchangeRate-API free tier (no API key required)
 // https://www.exchangerate-api.com/docs/free
 // Free tier: open.er-api.com - No API key, 1500 requests/month
-// Free tier updates once per day, so we cache the next update time from API response
+// Free tier updates once per day, so we cache the next update time from API response.
 type ExchangeRateFreeSource struct {
 	*sources.BaseSource
 
@@ -39,15 +39,16 @@ type exchangeRateFreeResponse struct {
 	Rates              map[string]float64 `json:"rates"`
 }
 
+// NewExchangeRateFreeSourceFromConfig creates a new ExchangeRateFreeSource from config.
 func NewExchangeRateFreeSourceFromConfig(config map[string]interface{}) (sources.Source, error) {
 	symbolsIface, ok := config["symbols"]
 	if !ok {
-		return nil, fmt.Errorf("missing 'symbols' in config")
+		return nil, fmt.Errorf("%w", ErrMissingSymbolsInConfig)
 	}
 
 	symbolList, ok := symbolsIface.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid 'symbols' type, expected list")
+		return nil, fmt.Errorf("%w", ErrInvalidSymbolsType)
 	}
 
 	symbolStrs := make([]string, 0, len(symbolList))
@@ -60,7 +61,7 @@ func NewExchangeRateFreeSourceFromConfig(config map[string]interface{}) (sources
 	}
 
 	if len(symbolStrs) == 0 {
-		return nil, fmt.Errorf("no valid symbols for ExchangeRate-API Free")
+		return nil, fmt.Errorf("%w", ErrNoValidSymbolsAPI)
 	}
 
 	timeout := 5 * time.Second
@@ -83,7 +84,7 @@ func NewExchangeRateFreeSourceFromConfig(config map[string]interface{}) (sources
 
 	pairs := make(map[string]string)
 	for _, symbol := range symbolStrs {
-		pairs[symbol] = "USD"
+		pairs[symbol] = baseCurrency
 	}
 
 	baseSource := sources.NewBaseSource("exchangerate_free", sources.SourceTypeFiat, pairs, logger)
@@ -101,10 +102,12 @@ func NewExchangeRateFreeSourceFromConfig(config map[string]interface{}) (sources
 	return s, nil
 }
 
-func (s *ExchangeRateFreeSource) Initialize(ctx context.Context) error {
+// Initialize prepares the source.
+func (s *ExchangeRateFreeSource) Initialize(_ context.Context) error {
 	return nil
 }
 
+// Start starts the ExchangeRate-API Free source.
 func (s *ExchangeRateFreeSource) Start(ctx context.Context) error {
 	s.Logger().Info("Starting ExchangeRate-API Free source")
 
@@ -164,7 +167,7 @@ func (s *ExchangeRateFreeSource) Start(ctx context.Context) error {
 				return
 			case <-timer.C:
 				// Time to fetch new prices
-				s.fetchWithRetries(ctx)
+				_ = s.fetchWithRetries(ctx)
 			}
 		}
 	}()
@@ -173,56 +176,7 @@ func (s *ExchangeRateFreeSource) Start(ctx context.Context) error {
 }
 
 func (s *ExchangeRateFreeSource) fetchWithRetries(ctx context.Context) error {
-	maxRetries := 5
-	initialBackoff := time.Second
-	maxBackoff := 2 * time.Minute
-
-	var lastErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		select {
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during retry")
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		err := s.fetchPrices(ctx)
-		if err == nil {
-			s.SetHealthy(true)
-			return nil
-		}
-
-		lastErr = err
-		s.Logger().Warn("Fetch attempt failed",
-			"attempt", attempt,
-			"max_retries", maxRetries,
-			"error", err,
-		)
-
-		if attempt == maxRetries {
-			break
-		}
-
-		backoff := initialBackoff * time.Duration(1<<uint(attempt-1))
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-
-		s.Logger().Debug("Retrying after backoff", "backoff", backoff, "attempt", attempt+1)
-
-		select {
-		case <-time.After(backoff):
-		case <-s.StopChan():
-			return fmt.Errorf("source stopped during backoff")
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	s.SetHealthy(false)
-	s.Logger().Error("Failed after all retries", "error", lastErr, "retries", maxRetries)
-	return lastErr
+	return FetchWithRetriesBase(ctx, s.BaseSource, s.StopChan(), s.fetchPrices)
 }
 
 func (s *ExchangeRateFreeSource) fetchPrices(ctx context.Context) error {
@@ -238,16 +192,16 @@ func (s *ExchangeRateFreeSource) fetchPrices(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to fetch prices: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		s.Logger().Warn("Rate limit exceeded", "source", s.Name())
 		s.SetHealthy(false)
-		return fmt.Errorf("rate limit exceeded (HTTP 429)")
+		return fmt.Errorf("%w", sources.ErrRateLimitExceeded)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", sources.ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	var data exchangeRateFreeResponse
@@ -256,7 +210,7 @@ func (s *ExchangeRateFreeSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if data.Result != "success" {
-		return fmt.Errorf("API returned error result: %s", data.Result)
+		return fmt.Errorf("%w: %s", ErrInvalidResponse, data.Result)
 	}
 
 	// Store next update time from API response
@@ -274,7 +228,7 @@ func (s *ExchangeRateFreeSource) fetchPrices(ctx context.Context) error {
 
 	for _, symbol := range symbols {
 		parts := strings.Split(symbol, "/")
-		if len(parts) != 2 || parts[1] != "USD" {
+		if len(parts) != 2 || parts[1] != baseCurrency {
 			continue
 		}
 
@@ -293,7 +247,7 @@ func (s *ExchangeRateFreeSource) fetchPrices(ctx context.Context) error {
 	}
 
 	if updatedCount == 0 {
-		return fmt.Errorf("no prices updated from API response")
+		return fmt.Errorf("%w", ErrNoPricesUpdated)
 	}
 
 	s.Logger().Debug("Updated prices from ExchangeRate-API Free",
@@ -305,19 +259,23 @@ func (s *ExchangeRateFreeSource) fetchPrices(ctx context.Context) error {
 	return nil
 }
 
+// Type returns the source type.
 func (s *ExchangeRateFreeSource) Type() sources.SourceType {
 	return sources.SourceTypeFiat
 }
 
-func (s *ExchangeRateFreeSource) GetPrices(ctx context.Context) (map[string]sources.Price, error) {
+// GetPrices returns the current prices.
+func (s *ExchangeRateFreeSource) GetPrices(_ context.Context) (map[string]sources.Price, error) {
 	return s.GetAllPrices(), nil
 }
 
+// Subscribe adds a subscriber to price updates.
 func (s *ExchangeRateFreeSource) Subscribe(updates chan<- sources.PriceUpdate) error {
 	s.AddSubscriber(updates)
 	return nil
 }
 
+// Stop stops the ExchangeRate-API Free source.
 func (s *ExchangeRateFreeSource) Stop() error {
 	s.Close()
 	return nil
