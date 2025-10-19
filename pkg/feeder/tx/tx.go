@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"tc.com/oracle-prices/pkg/feeder/client"
+	"github.com/StrathCole/oracle-go/pkg/feeder/client"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	sdkclient "github.com/cosmos/cosmos-sdk/client"

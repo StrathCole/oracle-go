@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 func TestFrankfurterSource_Initialize(t *testing.T) {

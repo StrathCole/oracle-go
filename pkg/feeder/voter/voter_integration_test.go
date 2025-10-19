@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"tc.com/oracle-prices/pkg/feeder/client"
-	"tc.com/oracle-prices/pkg/feeder/oracle"
-	"tc.com/oracle-prices/pkg/feeder/price"
+	"github.com/StrathCole/oracle-go/pkg/feeder/client"
+	"github.com/StrathCole/oracle-go/pkg/feeder/oracle"
+	"github.com/StrathCole/oracle-go/pkg/feeder/price"
 )
 
 // MockEventStream simulates blockchain event stream for voting rounds.

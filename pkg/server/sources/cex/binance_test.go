@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 func TestBinanceSource_NewSource(t *testing.T) {

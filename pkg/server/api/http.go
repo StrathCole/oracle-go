@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/metrics"
-	"tc.com/oracle-prices/pkg/server/aggregator"
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/metrics"
+	"github.com/StrathCole/oracle-go/pkg/server/aggregator"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // Server represents the HTTP API server.

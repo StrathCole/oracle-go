@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/feeder/client"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog"
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/feeder/client"
-	"tc.com/oracle-prices/pkg/server/sources"
 )
 
 const (

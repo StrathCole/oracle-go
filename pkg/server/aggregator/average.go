@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/metrics"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/metrics"
-	"tc.com/oracle-prices/pkg/server/sources"
 )
 
 // priceWithWeight tracks price and its source weight.

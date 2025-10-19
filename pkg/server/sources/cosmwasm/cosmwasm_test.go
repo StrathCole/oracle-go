@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"tc.com/oracle-prices/pkg/feeder/client"
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/feeder/client"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 func TestTerraportSource_NewSource(t *testing.T) {

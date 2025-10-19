@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"tc.com/oracle-prices/pkg/feeder/price"
+	"github.com/StrathCole/oracle-go/pkg/feeder/price"
 )
 
 const (

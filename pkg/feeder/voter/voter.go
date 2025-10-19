@@ -11,11 +11,11 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/shopspring/decimal"
 
-	"tc.com/oracle-prices/pkg/feeder/client"
-	"tc.com/oracle-prices/pkg/feeder/eventstream"
-	"tc.com/oracle-prices/pkg/feeder/oracle"
-	"tc.com/oracle-prices/pkg/feeder/price"
-	"tc.com/oracle-prices/pkg/feeder/tx"
+	"github.com/StrathCole/oracle-go/pkg/feeder/client"
+	"github.com/StrathCole/oracle-go/pkg/feeder/eventstream"
+	"github.com/StrathCole/oracle-go/pkg/feeder/oracle"
+	"github.com/StrathCole/oracle-go/pkg/feeder/price"
+	"github.com/StrathCole/oracle-go/pkg/feeder/tx"
 )
 
 // VotingState represents the current state of the voting loop.

@@ -1,4 +1,4 @@
-module tc.com/oracle-prices
+module github.com/StrathCole/oracle-go
 
 go 1.24.0
 

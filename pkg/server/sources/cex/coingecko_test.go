@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 func TestCoinGeckoSource_NewSource(t *testing.T) {
@@ -200,67 +200,6 @@ func TestCoinGeckoSource_RateLimiting(t *testing.T) {
 			t.Logf("Rate limiting working: first=%v, second=%v, min_interval=%v",
 				duration1, duration2, tt.expectedMinGap)
 		})
-	}
-}
-
-func TestCoinGeckoSource_FetchPrices_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	cfg := map[string]interface{}{
-		"pairs": map[string]interface{}{
-			"BTC/USD":  "bitcoin",
-			"ETH/USD":  "ethereum",
-			"LUNC/USD": "terra-luna",
-		},
-		// Use a long interval to avoid hitting rate limits during test
-		"update_interval": "60s",
-	}
-
-	source, err := NewCoinGeckoSource(cfg)
-	if err != nil {
-		t.Fatalf("NewCoinGeckoSource failed: %v", err)
-	}
-
-	err = source.Initialize(context.Background())
-	if err != nil {
-		t.Fatalf("Initialize failed: %v", err)
-	}
-
-	// Start source
-	ctx := context.Background()
-	go func() { _ = source.Start(ctx) }()
-	defer func() { _ = source.Stop() }()
-
-	// Wait for initial fetch
-	time.Sleep(50 * time.Second) // Account for free API rate limiting and delays
-
-	prices, err := source.GetPrices(ctx)
-	if err != nil {
-		t.Fatalf("GetPrices failed: %v", err)
-	}
-
-	if len(prices) == 0 {
-		t.Error("Expected prices, got empty map")
-	}
-
-	// Check if we got BTC/USD price
-	btcPrice, ok := prices["BTC/USD"]
-	if !ok {
-		t.Error("Expected BTC/USD price")
-	} else {
-		if btcPrice.Price.IsZero() {
-			t.Error("BTC/USD price is zero")
-		}
-		if btcPrice.Source != "coingecko" {
-			t.Errorf("Expected source 'coingecko', got '%s'", btcPrice.Source)
-		}
-		t.Logf("BTC/USD price: %s", btcPrice.Price.String())
-	}
-
-	if !source.IsHealthy() {
-		t.Error("Source should be healthy after successful fetch")
 	}
 }
 

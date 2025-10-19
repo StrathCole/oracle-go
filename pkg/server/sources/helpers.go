@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"tc.com/oracle-prices/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/logging"
 )
 
 // GetLoggerFromConfig extracts logger from config map or returns a default noop logger.

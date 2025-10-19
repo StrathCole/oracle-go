@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/metrics"
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/metrics"
 )
 
 const (

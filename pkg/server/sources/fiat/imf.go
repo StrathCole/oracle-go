@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/server/sources"
 )
 
 const imfSDRURL = "https://www.imf.org/external/np/fin/data/rms_sdrv.aspx"

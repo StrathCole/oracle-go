@@ -4,8 +4,8 @@ package aggregator
 import (
 	"fmt"
 
-	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // Aggregator defines the interface for price aggregation strategies.

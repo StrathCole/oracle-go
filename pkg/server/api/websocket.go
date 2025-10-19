@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/logging"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/gorilla/websocket"
-	"tc.com/oracle-prices/pkg/logging"
-	"tc.com/oracle-prices/pkg/server/sources"
 )
 
 // WebSocketServer handles WebSocket connections for real-time price streaming.

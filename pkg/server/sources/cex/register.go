@@ -2,7 +2,7 @@
 package cex
 
 import (
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 func init() {

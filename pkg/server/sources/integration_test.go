@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/config"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
+	_ "github.com/StrathCole/oracle-go/pkg/server/sources/cex"    // Register CEX sources
+	_ "github.com/StrathCole/oracle-go/pkg/server/sources/evm"    // Register EVM sources
+	_ "github.com/StrathCole/oracle-go/pkg/server/sources/fiat"   // Register fiat sources
+	_ "github.com/StrathCole/oracle-go/pkg/server/sources/oracle" // Register oracle sources
 	"github.com/shopspring/decimal"
-	"tc.com/oracle-prices/pkg/config"
-	"tc.com/oracle-prices/pkg/server/sources"
-	_ "tc.com/oracle-prices/pkg/server/sources/cex"    // Register CEX sources
-	_ "tc.com/oracle-prices/pkg/server/sources/evm"    // Register EVM sources
-	_ "tc.com/oracle-prices/pkg/server/sources/fiat"   // Register fiat sources
-	_ "tc.com/oracle-prices/pkg/server/sources/oracle" // Register oracle sources
 )
 
 // nolint:gocognit // TestRealCEXSources comprehensively tests all enabled CEX sources with nested loops and validations

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"tc.com/oracle-prices/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // FetchWithRetriesBase is the common retry logic used by all fiat sources.
