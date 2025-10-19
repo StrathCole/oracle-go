@@ -278,12 +278,16 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 	if oldPrevote, exists := v.prevotes[valKey]; exists {
 		vote := oracle.NewVote(oldPrevote, validator, v.feeder)
 		msgs = append(msgs, vote)
-		v.logger.Info().
+		// Use debug level for sensitive prevote data (salt, vote string)
+		v.logger.Debug().
 			Str("validator", valKey).
 			Str("salt", oldPrevote.Salt).
 			Str("vote_string", oldPrevote.Vote).
 			Str("prevote_hash", oldPrevote.Msg.Hash).
-			Msg("Including vote from previous prevote")
+			Msg("Including vote from previous prevote (details)")
+		v.logger.Info().
+			Str("validator", valKey).
+			Msg("Revealing vote from previous period")
 	}
 
 	// Add new prevote for current period
@@ -351,12 +355,17 @@ func (v *Voter) submitVoteForValidator(ctx context.Context, validator sdk.ValAdd
 		}
 	}
 
-	v.logger.Info().
+	// Use debug level for sensitive prevote details
+	v.logger.Debug().
 		Str("validator", valKey).
 		Uint64("period", period).
 		Str("new_prevote_hash", prevote.Msg.Hash).
 		Str("new_vote_string", prevote.Vote).
-		Msg("Submitted vote")
+		Msg("Submitted vote (prevote details)")
+	v.logger.Info().
+		Str("validator", valKey).
+		Uint64("period", period).
+		Msg("Prevote submitted for next period")
 
 	return nil
 }
@@ -375,24 +384,37 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 			// Try to identify message type from string representation
 			switch {
 			case strings.Contains(msgType, "MsgAggregateExchangeRatePrevote"):
-				v.logger.Info().
+				v.logger.Debug().
 					Int("msg_index", i).
 					Str("type", "prevote").
 					Str("message", msgStr).
+					Msg("DRY RUN: Prevote details")
+				v.logger.Info().
+					Int("msg_index", i).
+					Str("type", "prevote").
 					Uint64("period", period).
 					Msg("DRY RUN: Would submit prevote")
 			case strings.Contains(msgType, "MsgAggregateExchangeRateVote"):
-				v.logger.Info().
+				v.logger.Debug().
 					Int("msg_index", i).
 					Str("type", "vote").
 					Str("message", msgStr).
 					Uint64("period", period).
 					Msg("DRY RUN: Would submit vote")
-			default:
 				v.logger.Info().
+					Int("msg_index", i).
+					Str("type", "vote").
+					Uint64("period", period).
+					Msg("DRY RUN: Would submit vote")
+			default:
+				v.logger.Debug().
 					Int("msg_index", i).
 					Str("type", msgType).
 					Str("message", msgStr).
+					Msg("DRY RUN: Would submit message")
+				v.logger.Info().
+					Int("msg_index", i).
+					Str("type", msgType).
 					Msg("DRY RUN: Would submit message")
 			}
 		}
@@ -555,6 +577,12 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 			continue
 		}
 
+		// Skip invalid symbols (empty denom means validation failed)
+		if denom == "" {
+			v.logger.Warn().Str("symbol", symbol).Msg("Invalid symbol format, skipping")
+			continue
+		}
+
 		if !whitelistSet[denom] {
 			filtered = append(filtered, fmt.Sprintf("%s(%s)", symbol, denom))
 			continue
@@ -648,7 +676,22 @@ func (v *Voter) convertToOraclePrices(prices map[string]decimal.Decimal, whiteli
 // - "USD" -> "uusd" (special case, represents the price of 1 USD in LUNC)
 // - "MNT/USD" or "MNT" -> "umnt"
 // - "USTC/USD" or "USTC" -> "UST" (meta-denom, no prefix).
+//
+// Returns empty string if symbol is invalid or empty.
 func symbolToDenom(symbol string) string {
+	// Validate input
+	symbol = strings.TrimSpace(symbol)
+	if symbol == "" {
+		return ""
+	}
+
+	// Validate symbol doesn't contain invalid characters
+	for _, ch := range symbol {
+		if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '/' || ch == '-' || ch == '_') {
+			return "" // Invalid character found
+		}
+	}
+
 	// Convert to uppercase for processing
 	upper := strings.ToUpper(symbol)
 
@@ -656,6 +699,11 @@ func symbolToDenom(symbol string) string {
 	upper = strings.TrimSuffix(upper, "/USD")
 	upper = strings.TrimSuffix(upper, "/USDT")
 	upper = strings.TrimSuffix(upper, "/USDC")
+
+	// After removing suffix, check if we have a valid symbol left
+	if upper == "" {
+		return ""
+	}
 
 	// Handle special cases
 	switch upper {

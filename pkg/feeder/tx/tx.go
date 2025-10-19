@@ -4,6 +4,8 @@ package tx
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/StrathCole/oracle-go/pkg/feeder/client"
 
@@ -53,7 +55,7 @@ type BroadcastTxRequest struct {
 	Memo      string         // Transaction memo (optional)
 }
 
-// BroadcastTx constructs, signs, and broadcasts a transaction.
+// BroadcastTx constructs, signs, and broadcasts a transaction with automatic retry for sequence mismatches.
 // It automatically retrieves account number and sequence from the chain.
 //
 // Returns the transaction response if successful, or an error if:
@@ -61,7 +63,38 @@ type BroadcastTxRequest struct {
 // - Failed to sign transaction.
 // - Failed to broadcast transaction.
 // - Transaction was rejected by the chain (non-zero code).
+//
+// Automatically retries up to 3 times if a sequence mismatch error occurs.
 func (b *Broadcaster) BroadcastTx(ctx context.Context, req BroadcastTxRequest) (*sdk.TxResponse, error) {
+	const maxRetries = 3
+	const retryDelay = 2 * time.Second
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			b.logger.Info().Int("attempt", attempt+1).Msg("Retrying transaction after sequence mismatch")
+			time.Sleep(retryDelay)
+		}
+
+		txResp, err := b.broadcastTxAttempt(ctx, req)
+		if err == nil {
+			return txResp, nil
+		}
+
+		// Check if it's a sequence mismatch error
+		if !isSequenceMismatchError(err) || attempt == maxRetries-1 {
+			return txResp, err
+		}
+
+		lastErr = err
+		b.logger.Warn().Err(err).Msg("Sequence mismatch detected, will retry")
+	}
+
+	return nil, fmt.Errorf("transaction failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+// broadcastTxAttempt performs a single transaction broadcast attempt.
+func (b *Broadcaster) broadcastTxAttempt(ctx context.Context, req BroadcastTxRequest) (*sdk.TxResponse, error) {
 	// Get account info (account number and sequence)
 	accNum, sequence, err := b.client.GetAccount(ctx, req.Feeder)
 	if err != nil {
@@ -157,6 +190,13 @@ func EstimateGas(numMsgs int) uint64 {
 		numMsgs = 0
 	}
 
+	// Cap at maximum reasonable message count to prevent overflow/resource exhaustion
+	// This is just a sanity check, as the actual limit is much lower
+	const maxMessages = 1000
+	if numMsgs > maxMessages {
+		numMsgs = maxMessages
+	}
+
 	// Base gas for transaction overhead
 	const baseGas uint64 = 50000
 
@@ -164,13 +204,27 @@ func EstimateGas(numMsgs int) uint64 {
 	const gasPerMsg uint64 = 75000
 
 	// Calculate base estimate
-	// #nosec G115 -- numMsgs validated to be non-negative above
+	// #nosec G115 -- numMsgs validated to be non-negative and capped above
 	estimate := baseGas + (uint64(numMsgs) * gasPerMsg)
 
 	// Add 20% safety buffer to handle gas fluctuations
 	buffer := estimate / 5 // 20%
 
 	return estimate + buffer
+}
+
+// isSequenceMismatchError checks if an error is due to sequence/nonce mismatch.
+func isSequenceMismatchError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "sequence") &&
+		(strings.Contains(errStr, "mismatch") ||
+			strings.Contains(errStr, "expected") ||
+			strings.Contains(errStr, "incorrect") ||
+			strings.Contains(errStr, "invalid"))
 }
 
 // CalculateFee calculates the fee for a transaction given gas limit and gas price.

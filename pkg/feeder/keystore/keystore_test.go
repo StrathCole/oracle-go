@@ -15,10 +15,11 @@ const testMnemonic = "notice oak worry limit wrap speak medal online prefer clus
 
 func TestGetAuth_ValidMnemonic(t *testing.T) {
 	// Get auth info from test mnemonic (using default Terra Classic path)
-	kr, valAddr, accAddr := GetAuth(testMnemonic, "")
+	kr, valAddr, accAddr, err := GetAuth(testMnemonic, "")
 	require.NotNil(t, kr, "Keyring should not be nil")
 	require.NotEmpty(t, valAddr, "Validator address should not be empty")
 	require.NotEmpty(t, accAddr, "Account address should not be empty")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	// Verify addresses are valid
 	require.True(t, len(valAddr) > 0, "Validator address should not be empty")
@@ -27,8 +28,10 @@ func TestGetAuth_ValidMnemonic(t *testing.T) {
 
 func TestGetAuth_DeterministicKeys(t *testing.T) {
 	// Same mnemonic should always produce same keys
-	kr1, valAddr1, accAddr1 := GetAuth(testMnemonic, "")
-	kr2, valAddr2, accAddr2 := GetAuth(testMnemonic, "")
+	kr1, valAddr1, accAddr1, err1 := GetAuth(testMnemonic, "")
+	kr2, valAddr2, accAddr2, err2 := GetAuth(testMnemonic, "")
+	require.NoError(t, err1, "GetAuth should not return error")
+	require.NoError(t, err2, "GetAuth should not return error")
 
 	// Addresses should match
 	assert.Equal(t, valAddr1.String(), valAddr2.String(),
@@ -53,8 +56,10 @@ func TestGetAuth_DifferentMnemonics(t *testing.T) {
 	mnemonic2, err := generateTestMnemonic()
 	require.NoError(t, err)
 
-	_, valAddr1, accAddr1 := GetAuth(mnemonic1, "")
-	_, valAddr2, accAddr2 := GetAuth(mnemonic2, "")
+	_, valAddr1, accAddr1, err1 := GetAuth(mnemonic1, "")
+	_, valAddr2, accAddr2, err2 := GetAuth(mnemonic2, "")
+	require.NoError(t, err1, "GetAuth should not return error")
+	require.NoError(t, err2, "GetAuth should not return error")
 
 	// Addresses should NOT match
 	assert.NotEqual(t, valAddr1.String(), valAddr2.String(),
@@ -67,11 +72,13 @@ func TestGetAuth_HDPath(t *testing.T) {
 	// Verify we can use different HD paths
 	// Test with Terra Classic path (330)
 	terraPath := "m/44'/330'/0'/0/0"
-	_, valAddrTerra, accAddrTerra := GetAuth(testMnemonic, terraPath)
+	_, valAddrTerra, accAddrTerra, errTerra := GetAuth(testMnemonic, terraPath)
+	require.NoError(t, errTerra, "GetAuth should not return error")
 
 	// Test with Cosmos Hub path (118)
 	cosmosPath := "m/44'/118'/0'/0/0"
-	_, valAddrCosmos, accAddrCosmos := GetAuth(testMnemonic, cosmosPath)
+	_, valAddrCosmos, accAddrCosmos, errCosmos := GetAuth(testMnemonic, cosmosPath)
+	require.NoError(t, errCosmos, "GetAuth should not return error")
 
 	// Different paths should produce different addresses
 	assert.NotEqual(t, valAddrTerra.String(), valAddrCosmos.String(),
@@ -80,7 +87,8 @@ func TestGetAuth_HDPath(t *testing.T) {
 		"Different HD paths should produce different account addresses")
 
 	// Default (empty string) should use Terra Classic path (330)
-	_, valAddrDefault, accAddrDefault := GetAuth(testMnemonic, "")
+	_, valAddrDefault, accAddrDefault, errDefault := GetAuth(testMnemonic, "")
+	require.NoError(t, errDefault, "GetAuth should not return error")
 	assert.Equal(t, valAddrTerra.String(), valAddrDefault.String(),
 		"Default path should use Terra Classic (m/44'/330'/0'/0/0)")
 	assert.Equal(t, accAddrTerra.String(), accAddrDefault.String(),
@@ -88,7 +96,8 @@ func TestGetAuth_HDPath(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_Key(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic, "")
+	kr, _, accAddr, err := GetAuth(testMnemonic, "")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	// Get key record by name
 	record, err := kr.Key("test")
@@ -102,7 +111,8 @@ func TestPrivKeyKeyring_Key(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_KeyByAddress(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic, "")
+	kr, _, accAddr, err := GetAuth(testMnemonic, "")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	// Get key record by address
 	record, err := kr.KeyByAddress(accAddr)
@@ -116,7 +126,8 @@ func TestPrivKeyKeyring_KeyByAddress(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_Sign(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic, "")
+	kr, _, accAddr, err := GetAuth(testMnemonic, "")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	// Sign test message
 	testMsg := []byte("test message to sign")
@@ -135,7 +146,8 @@ func TestPrivKeyKeyring_Sign(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_SignByAddress(t *testing.T) {
-	kr, _, accAddr := GetAuth(testMnemonic, "")
+	kr, _, accAddr, err := GetAuth(testMnemonic, "")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	// Sign test message by address
 	testMsg := []byte("test message to sign")
@@ -155,7 +167,8 @@ func TestPrivKeyKeyring_SignByAddress(t *testing.T) {
 }
 
 func TestPrivKeyKeyring_PanicsOnUnimplementedMethods(t *testing.T) {
-	kr, _, _ := GetAuth(testMnemonic, "")
+	kr, _, _, err := GetAuth(testMnemonic, "")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	// Backend() should panic
 	assert.Panics(t, func() {
@@ -210,7 +223,8 @@ func generateTestMnemonic() (string, error) {
 func TestAddressPrefix(t *testing.T) {
 	// Note: Address prefix depends on SDK config (terra/cosmos)
 	// We just verify it's a valid bech32 address
-	_, _, accAddr := GetAuth(testMnemonic, "")
+	_, _, accAddr, err := GetAuth(testMnemonic, "")
+	require.NoError(t, err, "GetAuth should not return error")
 
 	addrStr := accAddr.String()
 	require.NotEmpty(t, addrStr, "Address should not be empty")
@@ -225,7 +239,8 @@ func BenchmarkGetAuth(b *testing.B) {
 }
 
 func BenchmarkSign(b *testing.B) {
-	kr, _, _ := GetAuth(testMnemonic, "")
+	kr, _, _, err := GetAuth(testMnemonic, "")
+	require.NoError(b, err, "GetAuth should not return error")
 	testMsg := []byte("test message to sign")
 
 	b.ResetTimer()
