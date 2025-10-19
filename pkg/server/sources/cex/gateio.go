@@ -76,6 +76,8 @@ func (s *GateioSource) Start(ctx context.Context) error {
 	// Initial fetch
 	if err := s.fetchPrices(ctx); err != nil {
 		s.Logger().Warn("Initial fetch failed", "error", err)
+	} else {
+		s.SetHealthy(true)
 	}
 
 	// Start polling loop

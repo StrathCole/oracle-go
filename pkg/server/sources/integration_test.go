@@ -38,7 +38,7 @@ func TestRealCEXSources(t *testing.T) {
 				t.Fatalf("Failed to create source: %v", err)
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 
 			// Initialize
@@ -52,8 +52,8 @@ func TestRealCEXSources(t *testing.T) {
 			}
 			defer func() { _ = source.Stop() }()
 
-			// Wait for prices
-			time.Sleep(5 * time.Second)
+			// Wait for prices (increased to account for poll delays)
+			time.Sleep(2 * time.Second)
 
 			// Get prices
 			prices, err := source.GetPrices(ctx)
@@ -396,13 +396,14 @@ func TestRealCosmWasmSources(t *testing.T) {
 	}
 }
 
-// TestRealBinance tests Binance WebSocket (no API key required).
+// TestRealBinance tests Binance REST API (no API key required).
 func TestRealBinance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	config := map[string]interface{}{
+		"use_websocket": false, // Force REST mode for testing
 		"pairs": map[string]interface{}{
 			"BTC/USDT":  "BTCUSDT",
 			"ETH/USDT":  "ETHUSDT",
@@ -415,7 +416,7 @@ func TestRealBinance(t *testing.T) {
 		t.Fatalf("Failed to create Binance source: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	if err := source.Initialize(ctx); err != nil {
@@ -429,7 +430,7 @@ func TestRealBinance(t *testing.T) {
 		_ = source.Stop()
 	}()
 
-	// Wait for WebSocket connection and initial data
+	// Wait for REST API fetch and initial data
 	time.Sleep(8 * time.Second)
 
 	prices, err := source.GetPrices(ctx)

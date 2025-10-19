@@ -101,6 +101,7 @@ feeder:
 # Price Sources Configuration
 sources:
   # CoinGecko (REST API) - Comprehensive coverage, fallback provider
+  # CoinGecko (REST API) - Comprehensive coverage, fallback provider
   - type: cex
     name: coingecko
     enabled: true

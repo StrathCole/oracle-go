@@ -234,7 +234,7 @@ func TestCoinGeckoSource_FetchPrices_Integration(t *testing.T) {
 	defer func() { _ = source.Stop() }()
 
 	// Wait for initial fetch
-	time.Sleep(20 * time.Second) // Account for free API rate limiting
+	time.Sleep(50 * time.Second) // Account for free API rate limiting and delays
 
 	prices, err := source.GetPrices(ctx)
 	if err != nil {

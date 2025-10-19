@@ -32,7 +32,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v4
         with:
-          version: latest
+          version: v2.x
           args: --timeout=5m
 
   gofumpt:
@@ -71,14 +71,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: '**/package.json'
 
       - name: Install markdownlint-cli
         run: npm install -g markdownlint-cli
 
       - name: Run markdownlint
-        run: markdownlint '**/*.md' --ignore node_modules --ignore build
+        run: markdownlint '**/*.md' --ignore node_modules --ignore build --config .markdownlintrc
 
   test:
     name: Tests
@@ -96,8 +94,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Run unit tests
+        run: go test -v -race -short -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

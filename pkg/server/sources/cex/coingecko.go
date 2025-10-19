@@ -98,6 +98,8 @@ func (s *CoinGeckoSource) Start(ctx context.Context) error {
 	// Fetch initial prices
 	if err := s.fetchPrices(ctx); err != nil {
 		s.Logger().Warn("Failed to fetch initial prices", "error", err.Error())
+	} else {
+		s.SetHealthy(true)
 	}
 
 	// Start update loop

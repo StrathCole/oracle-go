@@ -151,6 +151,8 @@ func (s *MEXCSource) Start(ctx context.Context) error {
 	s.Logger().Info("Performing initial price fetch")
 	if err := s.fetchPrices(ctx); err != nil {
 		s.Logger().Warn("Initial fetch failed", "error", err.Error())
+	} else {
+		s.SetHealthy(true)
 	}
 
 	if s.useWebSocket {

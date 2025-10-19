@@ -19,13 +19,17 @@ const (
 
 // TestRealTerraportDEX tests the Terraport source against the real Terra Classic mainnet.
 func TestRealTerraportDEX(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
 				"symbol":           luncUsdcPair,
 				"contract_address": "terra1a29fltd5h5y8se0xanw48wkmqg7nfpmv5jsl472uun0274h8xatqd3yzfh",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+				"asset1_denom":     "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5",
 				"decimals0":        6,
 				"decimals1":        6,
 			},
@@ -38,13 +42,17 @@ func TestRealTerraportDEX(t *testing.T) {
 
 // TestRealTerraswapDEX tests Terraswap DEX integration on Terra Classic mainnet.
 func TestRealTerraswapDEX(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
 				"symbol":           luncUsdcPair,
-				"contract_address": "terra1a9dfl86mq5p3f59r3n7qpmpvyxn29jf96hqwyhwmwz6cnsn4nqnnknmjtr",
+				"contract_address": "terra19h62lw77rluxf6yg4szcclcgk9tsalx72cv7dlzvzs8gy20g70js7c9jkc",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+				"asset1_denom":     "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5",
 				"decimals0":        6,
 				"decimals1":        6,
 			},
@@ -57,13 +65,17 @@ func TestRealTerraswapDEX(t *testing.T) {
 
 // TestRealGarudaDEX tests the Garuda source against the real Terra Classic mainnet.
 func TestRealGarudaDEX(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	config := map[string]interface{}{
 		"pairs": []interface{}{
 			map[string]interface{}{
 				"symbol":           luncUsdcPair,
-				"contract_address": "terra1gm5p3nnm2jswz38h8dqu47fsmchhy9e2e3d3j5wd0jvzj0ydqpjsfyhd0k",
+				"contract_address": "terra1vnt3tjg0v98hgp0vx8nynvklnjqzkzsqvtpzv9v56r800gdhmxwstv5y64",
 				"asset0_denom":     "uluna",
-				"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+				"asset1_denom":     "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5",
 				"decimals0":        6,
 				"decimals1":        6,
 			},
@@ -145,7 +157,7 @@ func TestAllCosmWasmDEXs(t *testing.T) {
 						"symbol":           "LUNC/USDC",
 						"contract_address": tc.address,
 						"asset0_denom":     "uluna",
-						"asset1_denom":     "ibc/B3504E092456BA618CC28AC671A71FB08C6CA0FD0BE7C8A5B5A3E2DD933CC9E4",
+						"asset1_denom":     "ibc/0BB9D8513E8E8E9AE6A9D211D9136E6DA42288DDE6CFAA453A150A4566054DC5",
 						"decimals0":        6,
 						"decimals1":        6,
 					},
@@ -240,7 +252,6 @@ func setupCosmWasmTestClient(t *testing.T) *client.Client {
 
 	// Terra Classic mainnet gRPC endpoints
 	grpcEndpoints := []client.EndpointConfig{
-		{Address: "grpc.terra-classic.hexxagon.io:443", TLS: true},
 		{Address: "terra-classic-grpc.publicnode.com:443", TLS: true},
 	}
 
@@ -273,7 +284,7 @@ func testCosmWasmDEXSource(
 
 	grpcClient := setupCosmWasmTestClient(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	source, err := sourceCreator(config, grpcClient)
@@ -286,11 +297,11 @@ func testCosmWasmDEXSource(
 	}
 
 	if err := source.Start(ctx); err != nil {
-		t.Fatalf("Failed to start: %v", err)
+		t.Fatalf("Failed to start %s: %v", sourceName, err)
 	}
 	defer func() { _ = source.Stop() }()
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	prices, err := source.GetPrices(ctx)
 	if err != nil {
