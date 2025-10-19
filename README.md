@@ -358,85 +358,85 @@ make test              # Run tests
 package cex
 
 import (
-	"context"
-	"github.com/StrathCole/oracle-go/pkg/server/sources"
+  "context"
+  "github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 type MySource struct {
-	*sources.BaseSource
-	// Add any custom fields (API client, etc.)
+  *sources.BaseSource
+  // Add any custom fields (API client, etc.)
 }
 
 // NewMySource creates a new source instance
 func NewMySource(config map[string]interface{}) (sources.Source, error) {
-	logger := sources.GetLoggerFromConfig(config)
-	
-	// Parse pair mappings from config
-	pairs, err := sources.ParsePairsFromMap(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse pairs: %w", err)
-	}
-	
-	// Create base source with required methods
-	base := sources.NewBaseSource("mysource", sources.SourceTypeCEX, pairs, logger)
-	
-	return &MySource{
-		BaseSource: base,
-		// Initialize custom fields
-	}, nil
+  logger := sources.GetLoggerFromConfig(config)
+  
+  // Parse pair mappings from config
+  pairs, err := sources.ParsePairsFromMap(config)
+  if err != nil {
+    return nil, fmt.Errorf("failed to parse pairs: %w", err)
+  }
+  
+  // Create base source with required methods
+  base := sources.NewBaseSource("mysource", sources.SourceTypeCEX, pairs, logger)
+  
+  return &MySource{
+    BaseSource: base,
+    // Initialize custom fields
+  }, nil
 }
 
 func (s *MySource) Initialize(ctx context.Context) error {
-	s.Logger().Info("Initializing MySource")
-	// Setup connections, validate config, etc.
-	return nil
+  s.Logger().Info("Initializing MySource")
+  // Setup connections, validate config, etc.
+  return nil
 }
 
 func (s *MySource) Start(ctx context.Context) error {
-	s.Logger().Info("Starting MySource")
-	
-	// Initial fetch
-	if err := s.fetchPrices(ctx); err != nil {
-		s.Logger().Warn("Failed to fetch initial prices", "error", err)
-	} else {
-		s.SetHealthy(true)  // ← Important: set health after successful fetch
-	}
-	
-	// Start polling loop
-	go s.updateLoop(ctx)
-	return nil
+  s.Logger().Info("Starting MySource")
+  
+  // Initial fetch
+  if err := s.fetchPrices(ctx); err != nil {
+    s.Logger().Warn("Failed to fetch initial prices", "error", err)
+  } else {
+    s.SetHealthy(true)  // ← Important: set health after successful fetch
+  }
+  
+  // Start polling loop
+  go s.updateLoop(ctx)
+  return nil
 }
 
 func (s *MySource) Stop() error {
-	s.Logger().Info("Stopping MySource")
-	return nil
+  s.Logger().Info("Stopping MySource")
+  return nil
 }
 
 func (s *MySource) fetchPrices(ctx context.Context) error {
-	// Fetch prices from API and call:
-	// s.SetPrice(symbol, price, time.Now())
-	return nil
+  // Fetch prices from API and call:
+  // s.SetPrice(symbol, price, time.Now())
+  return nil
 }
 
 func (s *MySource) updateLoop(ctx context.Context) {
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-	
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.StopChan():
-			return
-		case <-ticker.C:
-			if err := s.fetchPrices(ctx); err != nil {
-				s.Logger().Error("Failed to fetch prices", "error", err)
-				s.SetHealthy(false)
-			} else {
-				s.SetHealthy(true)
-			}
-		}
-	}
+  ticker := time.NewTicker(15 * time.Second)
+  defer ticker.Stop()
+  
+  for {
+    select {
+    case <-ctx.Done():
+      return
+    case <-s.StopChan():
+      return
+    case <-ticker.C:
+      if err := s.fetchPrices(ctx); err != nil {
+        s.Logger().Error("Failed to fetch prices", "error", err)
+        s.SetHealthy(false)
+      } else {
+        s.SetHealthy(true)
+      }
+    }
+  }
 }
 ```
 
@@ -444,7 +444,7 @@ func (s *MySource) updateLoop(ctx context.Context) {
 
 ```go
 func init() {
-	sources.Register("cex.mysource", NewMySource)  // Format: "{type}.{name}"
+  sources.Register("cex.mysource", NewMySource)  // Format: "{type}.{name}"
 }
 ```
 
