@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/config"
 	"github.com/StrathCole/oracle-go/pkg/logging"
 	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/gorilla/websocket"
@@ -15,9 +18,10 @@ import (
 
 // WebSocketServer handles WebSocket connections for real-time price streaming.
 type WebSocketServer struct {
-	addr     string
-	logger   *logging.Logger
-	upgrader websocket.Upgrader
+	addr      string
+	logger    *logging.Logger
+	upgrader  websocket.Upgrader
+	tlsConfig config.TLSConfig // TLS configuration
 
 	// Client management
 	mu      sync.RWMutex
@@ -63,12 +67,13 @@ type PriceData struct {
 }
 
 // NewWebSocketServer creates a new WebSocket server.
-func NewWebSocketServer(addr string, logger *logging.Logger) *WebSocketServer {
+func NewWebSocketServer(addr string, tlsCfg config.TLSConfig, logger *logging.Logger) *WebSocketServer {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &WebSocketServer{
-		addr:   addr,
-		logger: logger,
+		addr:      addr,
+		logger:    logger,
+		tlsConfig: tlsCfg,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -98,13 +103,39 @@ func (s *WebSocketServer) Start(ctx context.Context) error {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	// Configure TLS if enabled
+	if s.tlsConfig.Enabled {
+		if s.tlsConfig.Cert == "" || s.tlsConfig.Key == "" {
+			return fmt.Errorf("TLS enabled but cert/key not provided")
+		}
+
+		// Configure TLS with secure defaults
+		server.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			},
+		}
+
+		s.logger.Info("Starting WebSocket server with TLS", "addr", s.addr)
+	} else {
+		s.logger.Info("Starting WebSocket server", "addr", s.addr)
+	}
+
 	// Start broadcast goroutine
 	go s.broadcastUpdates()
 
-	s.logger.Info("Starting WebSocket server", "addr", s.addr)
-
 	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if s.tlsConfig.Enabled {
+			err = server.ListenAndServeTLS(s.tlsConfig.Cert, s.tlsConfig.Key)
+		} else {
+			err = server.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.Error("WebSocket server error", "error", err)
 		}
 	}()

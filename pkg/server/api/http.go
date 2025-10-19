@@ -3,12 +3,14 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/StrathCole/oracle-go/pkg/config"
 	"github.com/StrathCole/oracle-go/pkg/logging"
 	"github.com/StrathCole/oracle-go/pkg/metrics"
 	"github.com/StrathCole/oracle-go/pkg/server/aggregator"
@@ -27,10 +29,11 @@ type Server struct {
 	lastCache     map[string]sources.Price
 	cacheTime     time.Time
 	wsServer      *WebSocketServer // Optional WebSocket server for streaming
+	tlsConfig     config.TLSConfig // TLS configuration
 }
 
 // NewServer creates a new HTTP API server.
-func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggregator, weights map[string]float64, cacheTTL time.Duration, logger *logging.Logger) *Server {
+func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggregator, weights map[string]float64, cacheTTL time.Duration, tlsCfg config.TLSConfig, logger *logging.Logger) *Server {
 	return &Server{
 		addr:          addr,
 		sources:       sourcesSlice,
@@ -39,6 +42,7 @@ func NewServer(addr string, sourcesSlice []sources.Source, agg aggregator.Aggreg
 		logger:        logger,
 		cacheTTL:      cacheTTL,
 		lastCache:     make(map[string]sources.Price),
+		tlsConfig:     tlsCfg,
 	}
 }
 
@@ -63,9 +67,32 @@ func (s *Server) Start() error {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	s.logger.Info("Starting HTTP server", "addr", s.addr)
-	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("HTTP server error: %w", err)
+	// Configure TLS if enabled
+	if s.tlsConfig.Enabled {
+		if s.tlsConfig.Cert == "" || s.tlsConfig.Key == "" {
+			return fmt.Errorf("TLS enabled but cert/key not provided")
+		}
+
+		// Configure TLS with secure defaults
+		s.server.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			},
+		}
+
+		s.logger.Info("Starting HTTPS server", "addr", s.addr)
+		if err := s.server.ListenAndServeTLS(s.tlsConfig.Cert, s.tlsConfig.Key); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("HTTPS server error: %w", err)
+		}
+	} else {
+		s.logger.Info("Starting HTTP server", "addr", s.addr)
+		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("HTTP server error: %w", err)
+		}
 	}
 	return nil
 }

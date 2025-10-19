@@ -282,12 +282,12 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	logger.Info("Created aggregator", "mode", cfg.Server.AggregateMode)
 
 	// Start HTTP server
-	server := api.NewServer(cfg.Server.HTTP.Addr, allSources, agg, sourceWeights, cfg.Server.CacheTTL.ToDuration(), logger)
+	server := api.NewServer(cfg.Server.HTTP.Addr, allSources, agg, sourceWeights, cfg.Server.CacheTTL.ToDuration(), cfg.Server.HTTP.TLS, logger)
 
 	// Start WebSocket server if enabled
 	var wsServer *api.WebSocketServer
 	if cfg.Server.WebSocket.Enabled {
-		wsServer = api.NewWebSocketServer(cfg.Server.WebSocket.Addr, logger)
+		wsServer = api.NewWebSocketServer(cfg.Server.WebSocket.Addr, cfg.Server.HTTP.TLS, logger)
 		server.SetWebSocketServer(wsServer)
 
 		go func() {
