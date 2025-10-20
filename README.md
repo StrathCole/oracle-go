@@ -26,7 +26,7 @@ cp config/config.yaml config/my-config.yaml
 ### 3. Run
 
 ```bash
-export ORACLE_MNEMONIC="your 24-word mnemonic"
+export ORACLE_FEEDER_MNEMONIC="your 24-word mnemonic"
 ./build/oracle-go --config config/my-config.yaml
 ```
 
@@ -50,7 +50,7 @@ feeder:
   chain_id: columbus-5
   validators:
     - terravaloper1xxx...  # Your validator address
-  mnemonic_env: ORACLE_MNEMONIC
+  mnemonic_env: ORACLE_FEEDER_MNEMONIC
 
   grpc_endpoints:
     - host: terra-classic-grpc.publicnode.com

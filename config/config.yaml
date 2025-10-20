@@ -94,8 +94,8 @@ feeder:
     fallback_urls: []
     type: http  # "http", "grpc", or "websocket"
   
-  # Vote period (in blocks, default: 30 blocks ~30 seconds)
-  vote_period: 30
+  # Vote period (in blocks, default: 5 blocks ~30 seconds)
+  vote_period: 5
   
   # Dry run mode: create votes but don't submit them (for testing)
   # Can be overridden with --dry-run flag
