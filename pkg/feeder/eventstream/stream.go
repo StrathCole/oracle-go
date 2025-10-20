@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -15,6 +16,8 @@ import (
 const (
 	// paramsUpdateInterval is how often to poll oracle params.
 	paramsUpdateInterval = 10 * time.Second
+	// maxConsecutiveFailures is the number of consecutive failures before switching RPC endpoint.
+	maxConsecutiveFailures = 3
 )
 
 // Stream implements EventStream using WebSocket subscription to Tendermint RPC.
@@ -28,8 +31,10 @@ type Stream struct {
 	currentParams *Params
 
 	// Failover support
-	rpcEndpoints []string
-	currentRPC   int
+	rpcEndpoints        []string
+	currentRPC          int
+	consecutiveFailures int
+	failoverMu          sync.Mutex // Protects failover state
 }
 
 // NewStream creates a new event stream with failover support.
@@ -57,14 +62,15 @@ func NewStreamWithFailover(rpcEndpoints []string, client *client.Client, logger 
 	ws := NewWebsocket(primaryRPC, subscribeMsg, logger)
 
 	stream := &Stream{
-		logger:       logger.With().Str("component", "eventstream").Logger(),
-		websocket:    ws,
-		client:       client,
-		votePeriodCh: make(chan VotingPeriod, 10),
-		paramsCh:     make(chan Params, 10),
-		closeCh:      make(chan struct{}),
-		rpcEndpoints: rpcEndpoints,
-		currentRPC:   0,
+		logger:              logger.With().Str("component", "eventstream").Logger(),
+		websocket:           ws,
+		client:              client,
+		votePeriodCh:        make(chan VotingPeriod, 10),
+		paramsCh:            make(chan Params, 10),
+		closeCh:             make(chan struct{}),
+		rpcEndpoints:        rpcEndpoints,
+		currentRPC:          0,
+		consecutiveFailures: 0,
 	}
 
 	if len(rpcEndpoints) > 1 {
@@ -97,6 +103,10 @@ func (s *Stream) Start(ctx context.Context) error {
 func (s *Stream) votingPeriodLoop(ctx context.Context) {
 	s.logger.Info().Msg("starting voting period loop")
 
+	lastMessageTime := time.Now()
+	watchdogTicker := time.NewTicker(10 * time.Second)
+	defer watchdogTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -105,7 +115,21 @@ func (s *Stream) votingPeriodLoop(ctx context.Context) {
 		case <-s.closeCh:
 			s.logger.Info().Msg("voting period loop closed")
 			return
+		case <-watchdogTicker.C:
+			// Check if we've received messages recently
+			if time.Since(lastMessageTime) > 45*time.Second {
+				s.logger.Warn().
+					Dur("since_last_message", time.Since(lastMessageTime)).
+					Msg("no messages received recently, connection may be stale")
+				s.handleConnectionFailure()
+			}
 		case msg := <-s.websocket.Messages():
+			lastMessageTime = time.Now()
+			// Reset failure counter on successful message
+			s.failoverMu.Lock()
+			s.consecutiveFailures = 0
+			s.failoverMu.Unlock()
+
 			height, err := s.parseBlockHeight(msg)
 			if err != nil {
 				s.logger.Error().Err(err).Msg("failed to parse block height")
@@ -270,6 +294,48 @@ func (s *Stream) Close() {
 	s.logger.Info().Msg("closing event stream")
 	close(s.closeCh)
 	s.websocket.Close()
+}
+
+// handleConnectionFailure tracks failures and switches RPC endpoint if needed.
+func (s *Stream) handleConnectionFailure() {
+	s.failoverMu.Lock()
+	defer s.failoverMu.Unlock()
+
+	s.consecutiveFailures++
+
+	s.logger.Warn().
+		Int("consecutive_failures", s.consecutiveFailures).
+		Int("max_failures", maxConsecutiveFailures).
+		Msg("connection failure detected")
+
+	// Switch to next endpoint after max consecutive failures
+	if s.consecutiveFailures >= maxConsecutiveFailures && len(s.rpcEndpoints) > 1 {
+		s.switchToNextEndpointLocked()
+	}
+}
+
+// switchToNextEndpointLocked switches to the next available RPC endpoint.
+// Must be called with failoverMu held.
+func (s *Stream) switchToNextEndpointLocked() {
+	oldRPC := s.currentRPC
+	oldURL := s.rpcEndpoints[oldRPC]
+
+	// Move to next endpoint (circular)
+	s.currentRPC = (s.currentRPC + 1) % len(s.rpcEndpoints)
+	newURL := s.rpcEndpoints[s.currentRPC]
+
+	s.logger.Warn().
+		Str("old_endpoint", oldURL).
+		Str("new_endpoint", newURL).
+		Int("old_index", oldRPC).
+		Int("new_index", s.currentRPC).
+		Msg("switching to next RPC endpoint")
+
+	// Update WebSocket URL
+	s.websocket.UpdateURL(newURL)
+
+	// Reset failure counter
+	s.consecutiveFailures = 0
 }
 
 // stringSlicesEqual compares two string slices for equality.

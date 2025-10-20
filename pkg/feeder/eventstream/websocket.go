@@ -206,6 +206,30 @@ func (w *Websocket) Messages() <-chan []byte {
 	return w.messages
 }
 
+// UpdateURL changes the WebSocket URL and triggers reconnection.
+func (w *Websocket) UpdateURL(newURL string) {
+	w.mu.Lock()
+	oldURL := w.url
+	w.url = newURL
+	w.mu.Unlock()
+
+	w.logger.Info().
+		Str("old_url", oldURL).
+		Str("new_url", newURL).
+		Msg("updating websocket URL")
+
+	// Close existing connection to trigger reconnection with new URL
+	w.mu.Lock()
+	if w.conn != nil {
+		_ = w.conn.Close()
+		w.conn = nil
+	}
+	w.mu.Unlock()
+
+	// Reset backoff delay for immediate reconnection
+	w.reconnectDelay = initialReconnectBackoff
+}
+
 // Close closes the WebSocket connection.
 func (w *Websocket) Close() {
 	close(w.closed)
