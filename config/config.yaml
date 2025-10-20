@@ -928,8 +928,8 @@ sources:
 
 # Prometheus Metrics
 metrics:
-  enabled: true
-  addr: "127.0.0.1:9091"  # Bind to localhost by default for security
+  enabled: false
+  addr: "127.0.0.1:9191"  # Bind to localhost by default for security
   path: /metrics
 
 # Logging Configuration
