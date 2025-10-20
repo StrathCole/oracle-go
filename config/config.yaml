@@ -935,7 +935,7 @@ metrics:
 # Logging Configuration
 logging:
   # Level: "debug", "info", "warn", "error"
-  level: debug
+  level: info
   
   # Format: "json" or "text"
   format: text

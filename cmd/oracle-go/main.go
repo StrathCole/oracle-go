@@ -168,7 +168,7 @@ func main() {
 		cancel()
 	case err := <-errChan:
 		if err != nil {
-			logger.Error("Component failed", "error", err)
+			logger.Error("Component failed", "error", err.Error())
 			cancel()
 		}
 	}
