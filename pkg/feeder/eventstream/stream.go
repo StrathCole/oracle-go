@@ -125,16 +125,20 @@ func (s *Stream) votingPeriodLoop(ctx context.Context) {
 			}
 		case msg := <-s.websocket.Messages():
 			lastMessageTime = time.Now()
-			// Reset failure counter on successful message
+
+			// Parse block height
+			height, err := s.parseBlockHeight(msg)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("failed to parse block height, triggering failover")
+				// Trigger immediate failover to next RPC endpoint
+				s.handleParseFailure()
+				continue
+			}
+
+			// Reset failure counter on successful parse
 			s.failoverMu.Lock()
 			s.consecutiveFailures = 0
 			s.failoverMu.Unlock()
-
-			height, err := s.parseBlockHeight(msg)
-			if err != nil {
-				s.logger.Error().Err(err).Msg("failed to parse block height")
-				continue
-			}
 
 			// Get current oracle params
 			if s.currentParams == nil {
@@ -312,6 +316,20 @@ func (s *Stream) handleConnectionFailure() {
 	if s.consecutiveFailures >= maxConsecutiveFailures && len(s.rpcEndpoints) > 1 {
 		s.switchToNextEndpointLocked()
 	}
+}
+
+// handleParseFailure handles persistent parse failures by triggering immediate RPC failover.
+func (s *Stream) handleParseFailure() {
+	s.failoverMu.Lock()
+	defer s.failoverMu.Unlock()
+
+	if len(s.rpcEndpoints) <= 1 {
+		s.logger.Error().Msg("parse failure detected but no alternative RPC endpoints available")
+		return
+	}
+
+	s.logger.Warn().Msg("triggering immediate RPC failover due to persistent parse failures")
+	s.switchToNextEndpointLocked()
 }
 
 // switchToNextEndpointLocked switches to the next available RPC endpoint.
