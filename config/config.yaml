@@ -85,7 +85,7 @@ feeder:
   coin_type: 330
   
   # Fee configuration
-  gas_price: "28.325"       # Gas price in uluna for fee calculation
+  gas_price: "0"            # Gas price in uluna for fee calculation (oracle votes are gas-free)
   fee_denom: "uluna"        # Fee denomination (default: uluna for Terra Classic)
   
   # Price source for feeder
