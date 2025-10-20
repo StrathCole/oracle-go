@@ -8,13 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/metrics"
-	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/shopspring/decimal"
+
+	"github.com/StrathCole/oracle-go/pkg/metrics"
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // PancakeSwapSource implements price fetching from PancakeSwap V2 pairs on BSC.

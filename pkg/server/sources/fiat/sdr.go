@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/shopspring/decimal"
+
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // SDR basket currency amounts from IMF (effective August 1, 2022)

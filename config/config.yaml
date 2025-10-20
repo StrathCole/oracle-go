@@ -18,8 +18,25 @@ server:
   # Cache TTL for price responses
   cache_ttl: 60s
   
-  # Aggregation method: "median" or "average" (default)
-  aggregate_mode: average
+  # Aggregation method: "median" (default), "average", or "adaptive"
+  # - median: Weighted median with 10% outlier rejection
+  # - average: Simple weighted average
+  # - adaptive: Statistical filtering with configurable sensitivity
+  aggregate_mode: adaptive
+  
+  # Adaptive aggregator configuration (only used when aggregate_mode: adaptive)
+  adaptive:
+    # Sensitivity constant (k) for outlier filtering
+    # Formula: |price - median| <= k * standard_deviation
+    # - 1.5 = moderately strict, removes clear outliers (recommended)
+    # - 2.0 = tolerant, better for volatile assets
+    # - <1.5 = very strict, may reject valid prices
+    sensitivity: 1.5
+    
+    # Final aggregation method after filtering: "average" or "median"
+    # - average: faster, simple weighted mean of filtered prices
+    # - median: more robust, weighted median of filtered prices
+    final_mode: average
 
 # Feeder Configuration (for submitting oracle votes)
 feeder:

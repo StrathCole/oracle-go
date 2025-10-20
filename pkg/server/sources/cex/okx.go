@@ -9,9 +9,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/StrathCole/oracle-go/pkg/metrics"
 	"github.com/StrathCole/oracle-go/pkg/server/sources"
-	"github.com/shopspring/decimal"
 )
 
 const (

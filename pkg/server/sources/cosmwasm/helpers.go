@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/shopspring/decimal"
+
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // InitializeCosmWasmBase is a helper to reduce duplication in NewXSource constructors.

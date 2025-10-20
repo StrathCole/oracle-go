@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/StrathCole/oracle-go/pkg/server/aggregator"
 )
 
 // Validate checks configuration for errors.
@@ -52,8 +54,22 @@ func Validate(cfg *Config) error {
 func validateServerConfig(cfg *ServerConfig) error {
 	// Validate aggregate mode
 	mode := strings.ToLower(cfg.AggregateMode)
-	if mode != "median" && mode != "average" {
+	if mode != aggregator.ModeMedian && mode != aggregator.ModeAverage && mode != aggregator.ModeAdaptive {
 		return fmt.Errorf("%w: %s", ErrInvalidAggregateMode, cfg.AggregateMode)
+	}
+
+	// Validate adaptive configuration if using adaptive mode
+	if mode == aggregator.ModeAdaptive {
+		if cfg.Adaptive.Sensitivity <= 0 {
+			return fmt.Errorf("%w: sensitivity must be positive (typically 1.5-2.0)", ErrInvalidAggregateMode)
+		}
+		if cfg.Adaptive.Sensitivity > 5.0 {
+			return fmt.Errorf("%w: sensitivity too high (>5.0), consider using 1.5-2.0)", ErrInvalidAggregateMode)
+		}
+		finalMode := strings.ToLower(cfg.Adaptive.FinalMode)
+		if finalMode != "" && finalMode != aggregator.ModeMedian && finalMode != aggregator.ModeAverage {
+			return fmt.Errorf("%w: adaptive.final_mode must be 'median' or 'average'", ErrInvalidAggregateMode)
+		}
 	}
 
 	// Validate TLS config

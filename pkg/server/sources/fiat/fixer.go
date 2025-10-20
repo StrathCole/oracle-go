@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/shopspring/decimal"
+
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 // FixerSource fetches fiat prices from Fixer.io API

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/StrathCole/oracle-go/pkg/server/aggregator"
 )
 
 // Load loads configuration from YAML file and environment variables.
@@ -55,7 +57,17 @@ func applyDefaults(cfg *Config) {
 		cfg.Server.CacheTTL = Duration(60 * 1e9) // 60 seconds
 	}
 	if cfg.Server.AggregateMode == "" {
-		cfg.Server.AggregateMode = "median"
+		cfg.Server.AggregateMode = aggregator.ModeMedian
+	}
+
+	// Adaptive aggregator defaults
+	if cfg.Server.AggregateMode == aggregator.ModeAdaptive {
+		if cfg.Server.Adaptive.Sensitivity <= 0 {
+			cfg.Server.Adaptive.Sensitivity = 1.5 // Default: moderately strict
+		}
+		if cfg.Server.Adaptive.FinalMode == "" {
+			cfg.Server.Adaptive.FinalMode = aggregator.ModeAverage // Default: use average for final aggregation
+		}
 	}
 
 	// Metrics defaults

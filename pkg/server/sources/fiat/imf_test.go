@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/StrathCole/oracle-go/pkg/server/sources"
 	"github.com/shopspring/decimal"
+
+	"github.com/StrathCole/oracle-go/pkg/server/sources"
 )
 
 func TestIMFSource_Initialize(t *testing.T) {

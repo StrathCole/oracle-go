@@ -275,7 +275,18 @@ func runServer(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 	}
 
 	// Create aggregator based on configuration
-	agg, err := aggregator.NewAggregator(cfg.Server.AggregateMode, logger)
+	var adaptiveConfig *aggregator.AdaptiveConfig
+	if cfg.Server.AggregateMode == aggregator.ModeAdaptive {
+		adaptiveConfig = &aggregator.AdaptiveConfig{
+			Sensitivity: cfg.Server.Adaptive.Sensitivity,
+			FinalMode:   cfg.Server.Adaptive.FinalMode,
+		}
+		logger.Info("Using adaptive aggregator",
+			"sensitivity", cfg.Server.Adaptive.Sensitivity,
+			"final_mode", cfg.Server.Adaptive.FinalMode)
+	}
+
+	agg, err := aggregator.NewAggregatorWithConfig(cfg.Server.AggregateMode, logger, adaptiveConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create aggregator: %w", err)
 	}

@@ -189,10 +189,3 @@ func (a *MedianAggregator) median(prices []priceWithSource) decimal.Decimal {
 	// Fallback (shouldn't reach here)
 	return prices[n/2].price.Price
 }
-
-// priceWithSource tracks which source provided a price and its weight.
-type priceWithSource struct {
-	price  sources.Price
-	source string
-	weight float64 // Weight for aggregation (1.0 = standard, 0.5 = half weight, etc.)
-}

@@ -25,9 +25,16 @@ type Config struct {
 
 // ServerConfig configures the price server component.
 type ServerConfig struct {
-	HTTP          HTTPConfig `yaml:"http"`
-	CacheTTL      Duration   `yaml:"cache_ttl"`
-	AggregateMode string     `yaml:"aggregate_mode"`
+	HTTP          HTTPConfig     `yaml:"http"`
+	CacheTTL      Duration       `yaml:"cache_ttl"`
+	AggregateMode string         `yaml:"aggregate_mode"`
+	Adaptive      AdaptiveConfig `yaml:"adaptive"`
+}
+
+// AdaptiveConfig configures the adaptive aggregator.
+type AdaptiveConfig struct {
+	Sensitivity float64 `yaml:"sensitivity"` // k constant (1.5 = strict, 2.0 = tolerant)
+	FinalMode   string  `yaml:"final_mode"`  // "median" or "average" for final aggregation
 }
 
 // HTTPConfig configures the HTTP server.
