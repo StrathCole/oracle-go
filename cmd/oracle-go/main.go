@@ -330,7 +330,7 @@ func runFeeder(ctx context.Context, cfg *config.Config, logger *logging.Logger) 
 		"grpc_endpoints", len(cfg.Feeder.GRPCEndpoints))
 
 	// Get mnemonic (from config or environment variable)
-	mnemonic := cfg.Feeder.Mnemonic
+	mnemonic := ""
 	if cfg.Feeder.MnemonicEnv != "" {
 		mnemonic = os.Getenv(cfg.Feeder.MnemonicEnv)
 		if mnemonic == "" {

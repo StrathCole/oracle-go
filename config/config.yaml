@@ -69,9 +69,6 @@ feeder:
   validators:
     - terravaloper1xxxxxxxxx  # Replace with your validator address
   
-  # Mnemonic for feeder account (use mnemonic_env for production!)
-  mnemonic: ""  # Leave empty if using mnemonic_env
-  
   # Environment variable containing mnemonic (recommended for production)
   mnemonic_env: ORACLE_FEEDER_MNEMONIC
   

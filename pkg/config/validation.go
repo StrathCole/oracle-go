@@ -136,7 +136,7 @@ func validateFeederConfig(cfg *FeederConfig) error {
 	// Note: We only check that EITHER a direct mnemonic OR an env var name is configured.
 	// We do NOT check the env var value here to avoid TOCTOU (Time-of-Check-Time-of-Use) issues.
 	// The actual mnemonic value is validated at runtime when it's needed.
-	if cfg.Mnemonic == "" && cfg.MnemonicEnv == "" {
+	if cfg.MnemonicEnv == "" {
 		return fmt.Errorf("%w", ErrMnemonicRequired)
 	}
 
