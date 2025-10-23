@@ -112,7 +112,7 @@ WorkingDirectory=/opt/oracle-go
 ExecStart=/opt/oracle-go/oracle-go --config /opt/oracle-go/config/config.yaml
 Restart=always
 RestartSec=10
-Environment="ORACLE_MNEMONIC=<your_mnemonic_here>"
+Environment="ORACLE_FEEDER_MNEMONIC=<your_mnemonic_here>"
 
 [Install]
 WantedBy=multi-user.target
@@ -285,7 +285,7 @@ curl https://terra-classic-lcd.publicnode.com/cosmos/base/tendermint/v1beta1/nod
 
 - Verify 12 or 24 words
 - Check `coin_type: 330` (Terra Classic)
-- Ensure env var set: `echo $ORACLE_MNEMONIC`
+- Ensure env var set: `echo $ORACLE_FEEDER_MNEMONIC`
 
 ### No Whitelisted Prices
 
