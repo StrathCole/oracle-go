@@ -16,6 +16,7 @@ import (
 	"github.com/StrathCole/oracle-go/pkg/feeder/oracle"
 	"github.com/StrathCole/oracle-go/pkg/feeder/price"
 	"github.com/StrathCole/oracle-go/pkg/feeder/tx"
+	"github.com/StrathCole/oracle-go/pkg/version"
 )
 
 // VotingState represents the current state of the voting loop.
@@ -450,7 +451,7 @@ func (v *Voter) broadcastVoteTx(ctx context.Context, msgs []sdk.Msg, period uint
 			Feeder:    v.feeder,
 			FeeAmount: fee,
 			GasLimit:  gasLimit,
-			Memo:      fmt.Sprintf("Oracle vote period %d", period),
+			Memo:      version.AgentString(),
 		})
 
 		if err == nil {

@@ -31,6 +31,7 @@ import (
 	"github.com/StrathCole/oracle-go/pkg/server/aggregator"
 	"github.com/StrathCole/oracle-go/pkg/server/api"
 	"github.com/StrathCole/oracle-go/pkg/server/sources"
+	"github.com/StrathCole/oracle-go/pkg/version"
 
 	// Import sources to register them.
 	_ "github.com/StrathCole/oracle-go/pkg/server/sources/cex"
@@ -39,8 +40,6 @@ import (
 	_ "github.com/StrathCole/oracle-go/pkg/server/sources/fiat"
 	_ "github.com/StrathCole/oracle-go/pkg/server/sources/oracle"
 )
-
-const version = "0.1.0-dev"
 
 var (
 	configFile = flag.String("config", "config/config.yaml", "Path to configuration file")
@@ -55,7 +54,7 @@ func main() {
 	flag.Parse()
 
 	if *showVer {
-		fmt.Printf("oracle-go version %s\n", version)
+		fmt.Printf("oracle-go version %s\n", version.Version)
 		os.Exit(0)
 	}
 
@@ -111,7 +110,7 @@ func main() {
 	}
 	logging.SetGlobal(logger)
 
-	logger.Info("Starting oracle-go", "version", version, "mode", cfg.Mode)
+	logger.Info("Starting oracle-go", "version", version.Version, "mode", cfg.Mode)
 
 	// Log dry-run and verify mode if enabled
 	if cfg.Feeder.DryRun {

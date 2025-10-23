@@ -124,4 +124,18 @@ check: test lint
 ci: fmt-check lint test
 	@echo "✅ All CI checks passed!"
 
+## update-version: Update version (optionally specify VERSION=x.x.x)
+update-version:
+	@echo "Updating version..."
+	@./scripts/update-version.sh $(VERSION)
+
+## release: Create a new release with version bump and tag (requires VERSION=x.x.x)
+release:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION is required"; \
+		echo "Usage: make release VERSION=1.0.2"; \
+		exit 1; \
+	fi
+	@./scripts/release.sh $(VERSION)
+
 .DEFAULT_GOAL := help
