@@ -24,6 +24,11 @@ if [ ! -d ".git" ]; then
     exit 1
 fi
 
+if ! make ci ; then
+	echo "Error: CI check failed"
+	exit 1
+fi
+
 # Check if working directory is clean
 if ! git diff-index --quiet HEAD --; then
     echo "Error: Working directory is not clean. Commit or stash your changes first."

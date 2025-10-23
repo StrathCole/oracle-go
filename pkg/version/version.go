@@ -5,7 +5,7 @@ package version
 const Version = "1.0.2"
 
 // AgentString returns the full agent string with versioning.
-// Format: @classic-terra/oracle-go@v{version}
+// Format: @classic-terra/oracle-go@v{version}.
 func AgentString() string {
 	return "@classic-terra/oracle-go@v" + Version
 }
