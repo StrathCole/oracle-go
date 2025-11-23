@@ -39,7 +39,53 @@ func Load(path string) (*Config, error) {
 	// Apply defaults
 	applyDefaults(&cfg)
 
+	// Apply environment variable overrides
+	applyEnvOverrides(&cfg)
+
 	return &cfg, nil
+}
+
+// applyEnvOverrides applies overrides from environment variables.
+func applyEnvOverrides(cfg *Config) {
+	// Override Chain ID
+	if chainID := os.Getenv("ORACLE_FEEDER_CHAIN_ID"); chainID != "" {
+		cfg.Feeder.ChainID = chainID
+	}
+
+	// Override Validators
+	if validators := os.Getenv("ORACLE_FEEDER_VALIDATORS"); validators != "" {
+		// Split by comma and trim spaces
+		parts := strings.Split(validators, ",")
+		var vals []string
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				vals = append(vals, trimmed)
+			}
+		}
+		if len(vals) > 0 {
+			cfg.Feeder.Validators = vals
+		}
+	}
+
+	// Override Price Source URL
+	if url := os.Getenv("ORACLE_FEEDER_DATA_SOURCE_URL"); url != "" {
+		cfg.Feeder.PriceSource.URL = url
+	}
+
+	// Override MnemonicEnv if ORACLE_FEEDER_MNEMONIC is set directly
+	// This allows users to set the mnemonic directly in this env var
+	// without having to configure mnemonic_env in the config file.
+	// However, main.go uses cfg.Feeder.MnemonicEnv to look up the env var.
+	// So we ensure MnemonicEnv is set to "ORACLE_FEEDER_MNEMONIC" if it's not set,
+	// or if the user explicitly wants to use this variable.
+	// Actually, if ORACLE_FEEDER_MNEMONIC is set, we should probably ensure
+	// MnemonicEnv points to it, or we could handle it here.
+	// But main.go logic is:
+	// if cfg.Feeder.MnemonicEnv != "" { mnemonic = os.Getenv(cfg.Feeder.MnemonicEnv) }
+	// So if we set cfg.Feeder.MnemonicEnv = "ORACLE_FEEDER_MNEMONIC", it will work.
+	if os.Getenv("ORACLE_FEEDER_MNEMONIC") != "" {
+		cfg.Feeder.MnemonicEnv = "ORACLE_FEEDER_MNEMONIC"
+	}
 }
 
 // applyDefaults sets default values for optional fields.

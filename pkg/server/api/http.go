@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/StrathCole/oracle-go/pkg/config"
@@ -182,7 +183,15 @@ func (s *Server) handlePrices(w http.ResponseWriter, r *http.Request) {
 	s.lastCache = aggregatedPrices
 	s.cacheTime = time.Now()
 
-	s.sendJSON(w, s.convertToArray(aggregatedPrices))
+	if r.URL.Path == "/latest" {
+		response := map[string]interface{}{
+			"created_at": s.cacheTime.Format(time.RFC3339Nano),
+			"prices":     s.convertToLegacyArray(aggregatedPrices),
+		}
+		s.sendJSON(w, response)
+	} else {
+		s.sendJSON(w, s.convertToArray(aggregatedPrices))
+	}
 }
 
 // convertToArray converts price map to array format.
@@ -193,6 +202,21 @@ func (s *Server) convertToArray(prices map[string]sources.Price) []map[string]in
 			"symbol": price.Symbol,
 			"price":  price.Price.String(),
 		})
+	}
+	return result
+}
+
+// convertToLegacyArray converts price map to legacy array format ({denom, price}).
+func (s *Server) convertToLegacyArray(prices map[string]sources.Price) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(prices))
+	for _, price := range prices {
+		// Legacy endpoint only supports USD pairs and expects the symbol without /USD suffix
+		if strings.HasSuffix(price.Symbol, "/USD") {
+			result = append(result, map[string]interface{}{
+				"denom": strings.TrimSuffix(price.Symbol, "/USD"),
+				"price": price.Price.String(),
+			})
+		}
 	}
 	return result
 }
