@@ -77,7 +77,7 @@ sources:
 <summary><b>Runtime Modes</b> (click to expand)</summary>
 
 | Mode | Description | Use Case |
-|------|-------------|----------|
+| --- | --- | --- |
 | `both` (default) | Price server + Feeder | Single-server deployment |
 | `server` | Price server only | Shared price feed for multiple validators |
 | `feeder` | Feeder only | Connect to external price server |
@@ -221,7 +221,7 @@ curl http://localhost:9091/metrics | grep oracle_
 ### CEX Sources
 
 | Exchange | WebSocket | Notes |
-|----------|-----------|-------|
+| --- | --- | --- |
 | **Binance** | ✅ | Primary LUNC source |
 | **CoinGecko** | ❌ | Free: 10-30 calls/min |
 | **Kraken** | ❌ | Good for BTC/ETH |
@@ -237,7 +237,7 @@ curl http://localhost:9091/metrics | grep oracle_
 ### DEX Sources (CosmWasm)
 
 | DEX | Symbol |
-|-----|--------|
+| --- | --- |
 | **Terraswap** | LUNC/USDC |
 | **Terraport** | LUNC/USDC |
 | **Garuda** | LUNC/USDC |
@@ -245,13 +245,13 @@ curl http://localhost:9091/metrics | grep oracle_
 ### DEX Sources (EVM)
 
 | DEX | Symbol |
-|-----|--------|
+| --- | --- |
 | **PancakeSwap** | LUNC/USDT |
 
 ### Fiat Sources
 
 | Source | Notes |
-|--------| ------- |
+| --- | --- |
 | **ExchangeRate-API** | Free tier: 1500 requests/month |
 | **Fixer** | API key required |
 | **Frankfurter** | Free, no key |
@@ -264,7 +264,7 @@ Automatically calculated from IMF rates (USD, EUR, CNY, JPY, GBP).
 ### Oracle aggregators
 
 | Aggregator | Notes |
-|------------|-------|
+| --- | --- |
 | **Band Protocol** | Decentralized oracle |
 
 </details>
